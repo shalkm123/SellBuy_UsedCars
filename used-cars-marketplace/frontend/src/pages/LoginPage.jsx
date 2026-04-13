@@ -63,7 +63,6 @@ const STYLES = `
   }
   .ab-headline span { color:#F59E0B;display:block; }
   .ab-subline { margin-top:20px;font-size:15px;line-height:1.65;color:rgba(255,255,255,0.45);max-width:360px; }
-  @keyframes fadeUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
   .ab-stats { display:flex;gap:32px; }
   .ab-stat-val { font-family:'Bebas Neue',sans-serif;font-size:32px;color:#F59E0B;letter-spacing:1px; }
   .ab-stat-label { font-size:11px;color:rgba(255,255,255,0.35);letter-spacing:0.5px;text-transform:uppercase;margin-top:2px; }
@@ -74,7 +73,6 @@ const STYLES = `
     border-radius:100px;padding:8px 16px;font-size:12px;color:rgba(255,255,255,0.45);
   }
   .ab-trust-dot { width:6px;height:6px;border-radius:50%;background:#22c55e; }
-
   .ab-right {
     width:480px;flex-shrink:0;background:#0d0d0d;
     border-left:1px solid rgba(255,255,255,0.06);
@@ -105,9 +103,7 @@ const STYLES = `
     background:transparent;color:rgba(255,255,255,0.35);
   }
   .ab-toggle-btn.active { background:#F59E0B;color:#000;box-shadow:0 4px 20px rgba(245,158,11,0.3); }
-  .ab-roles {
-    display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:28px;
-  }
+  .ab-roles { display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:28px; }
   .ab-role-btn {
     padding:14px 8px;border-radius:12px;
     border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.03);
@@ -154,22 +150,10 @@ const STYLES = `
     font-size:13px;font-family:'DM Sans',sans-serif;font-weight:500;
   }
   .ab-switch-btn:hover { color:#fbbf24;text-decoration:underline; }
-  .ab-demo-note {
-    margin-top:24px;padding:12px 16px;
-    background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.12);
-    border-radius:10px;font-size:11px;color:rgba(255,255,255,0.3);line-height:1.6;
-  }
-  .ab-demo-note strong { color:rgba(245,158,11,0.7); }
-  .ab-scroll-line {
-    position:absolute;bottom:0;left:48px;right:48px;height:2px;
-    background:linear-gradient(90deg,transparent,#F59E0B,transparent);
-    animation:scanLine 3s linear infinite;
-  }
-  @keyframes scanLine {
-    from{transform:scaleX(0);transform-origin:left}
-    50%{transform:scaleX(1);transform-origin:left}
-    51%{transform-origin:right}
-    to{transform:scaleX(0);transform-origin:right}
+  .ab-error {
+    background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);
+    border-radius:10px;padding:10px 14px;color:#ef4444;
+    font-size:13px;margin-bottom:16px;
   }
   @media (max-width:900px) {
     .ab-left { display:none; }
@@ -178,9 +162,8 @@ const STYLES = `
 `;
 
 const ROLES = [
-  { id: "buyer",  emoji: "🛒", label: "Buyer",  desc: "Browse & buy",  nav: "/dashboard/buyer"  },
-  { id: "seller", emoji: "🚗", label: "Seller", desc: "List & manage", nav: "/dashboard/seller" },
-  { id: "admin",  emoji: "🛡", label: "Admin",  desc: "Platform ops",  nav: "/dashboard/admin"  },
+  { id: "buyer",  emoji: "🛒", label: "Buyer",  desc: "Browse & buy"  },
+  { id: "seller", emoji: "🚗", label: "Seller", desc: "List & manage" },
 ];
 
 const STATS = [
@@ -193,20 +176,37 @@ export default function LoginPage() {
   const [mode,     setMode]    = useState("login");
   const [role,     setRole]    = useState("buyer");
   const [showPass, setShowPass] = useState(false);
-  const [form,     setForm]    = useState({ name: "", email: "", password: "" });
   const [loading,  setLoading] = useState(false);
+  const [error,    setError]   = useState("");
+  const [form,     setForm]    = useState({ name: "", email: "", password: "", phone: "" });
 
-  const { login } = useAuth();
-  const navigate  = useNavigate();
+  const { login, register } = useAuth();
+  const navigate = useNavigate();
 
   const patch = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 700));
-    login(role, form.name);
-    navigate(ROLES.find((r) => r.id === role).nav);
+    try {
+      if (mode === "login") {
+        const user = await login(form.email, form.password);
+        // Redirect based on role from server
+        if (user.role === "admin")  navigate("/admin");
+        else if (user.role === "seller") navigate("/seller");
+        else navigate("/buyer");
+      } else {
+        await register(form.name, form.email, form.password, role, form.phone);
+        setMode("login");
+        setError("");
+        alert("Registered successfully! Please login.");
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || "Invalid email or password");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -214,14 +214,13 @@ export default function LoginPage() {
       <style>{STYLES}</style>
       <div className="ab-root">
 
-        {/* ── LEFT PANEL ── */}
+        {/* LEFT PANEL */}
         <div className="ab-left">
           <div className="ab-left-bg" />
           <div className="ab-left-overlay" />
           <div className="ab-left-grid" />
           <div className="ab-amber-orb ab-orb1" />
           <div className="ab-amber-orb ab-orb2" />
-          <div className="ab-scroll-line" />
 
           <div className="ab-left-content">
             <div className="ab-logo">
@@ -252,169 +251,113 @@ export default function LoginPage() {
                 ))}
               </div>
               <div className="ab-left-bottom">
-                <div className="ab-trust-badge">
-                  <div className="ab-trust-dot" /> SSL secured · 256-bit encryption
-                </div>
-                <div className="ab-trust-badge">
-                  <div className="ab-trust-dot" /> Zero hidden fees
-                </div>
+                <div className="ab-trust-badge"><div className="ab-trust-dot" /> SSL secured · 256-bit encryption</div>
+                <div className="ab-trust-badge"><div className="ab-trust-dot" /> Zero hidden fees</div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* ── RIGHT PANEL ── */}
+        {/* RIGHT PANEL */}
         <div className="ab-right">
           <div className="ab-right-glow" />
           <div className="ab-form-wrap">
 
             <div className="ab-form-header">
-              <h2 className="ab-form-title">
-                {mode === "login" ? "WELCOME BACK" : "GET STARTED"}
-              </h2>
+              <h2 className="ab-form-title">{mode === "login" ? "WELCOME BACK" : "GET STARTED"}</h2>
               <p className="ab-form-sub">
-                {mode === "login"
-                  ? "Sign in to access your dashboard"
-                  : "Create your free account in seconds"}
+                {mode === "login" ? "Sign in to access your dashboard" : "Create your free account in seconds"}
               </p>
             </div>
 
-            {/* Sign In / Create Account toggle */}
+            {/* Login / Register toggle */}
             <div className="ab-toggle">
               {["login", "signup"].map((m) => (
-                <button
-                  key={m}
-                  type="button"
+                <button key={m} type="button"
                   className={`ab-toggle-btn ${mode === m ? "active" : ""}`}
-                  onClick={() => setMode(m)}
-                >
+                  onClick={() => { setMode(m); setError(""); }}>
                   {m === "login" ? "Sign In" : "Create Account"}
                 </button>
               ))}
             </div>
 
-            {/* Role selector */}
-            <div className="ab-roles">
-              {ROLES.map(({ id, emoji, label, desc }) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={`ab-role-btn ${role === id ? "active" : ""}`}
-                  onClick={() => setRole(id)}
-                >
-                  <span className="ab-role-emoji">{emoji}</span>
-                  <span className="ab-role-label">{label}</span>
-                  <span className="ab-role-desc">{desc}</span>
-                </button>
-              ))}
-            </div>
+            {/* Role selector — signup only */}
+            {mode === "signup" && (
+              <div className="ab-roles">
+                {ROLES.map(({ id, emoji, label, desc }) => (
+                  <button key={id} type="button"
+                    className={`ab-role-btn ${role === id ? "active" : ""}`}
+                    onClick={() => setRole(id)}>
+                    <span className="ab-role-emoji">{emoji}</span>
+                    <span className="ab-role-label">{label}</span>
+                    <span className="ab-role-desc">{desc}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Error */}
+            {error && <div className="ab-error">{error}</div>}
 
             {/* Form */}
             <form onSubmit={handleSubmit}>
               <div className="ab-fields">
 
-                {/* Name — signup only */}
                 {mode === "signup" && (
-                  <div>
-                    <label className="ab-field-label">Full Name</label>
-                    <div className="ab-input-wrap">
-                      <input
-                        className="ab-input"
-                        type="text"
-                        placeholder="Rahul Sharma"
-                        value={form.name}
-                        onChange={patch("name")}
-                        required
-                      />
+                  <>
+                    <div>
+                      <label className="ab-field-label">Full Name</label>
+                      <div className="ab-input-wrap">
+                        <input className="ab-input" type="text" placeholder="Rahul Sharma"
+                          value={form.name} onChange={patch("name")} required />
+                      </div>
                     </div>
-                  </div>
+                    <div>
+                      <label className="ab-field-label">Phone (optional)</label>
+                      <div className="ab-input-wrap">
+                        <input className="ab-input" type="tel" placeholder="+91 9999999999"
+                          value={form.phone} onChange={patch("phone")} />
+                      </div>
+                    </div>
+                  </>
                 )}
 
-                {/* Email */}
                 <div>
                   <label className="ab-field-label">Email Address</label>
                   <div className="ab-input-wrap">
-                    <input
-                      className="ab-input"
-                      type="email"
-                      placeholder="rahul@example.com"
-                      value={form.email}
-                      onChange={patch("email")}
-                      required
-                    />
+                    <input className="ab-input" type="email" placeholder="rahul@example.com"
+                      value={form.email} onChange={patch("email")} required />
                   </div>
                 </div>
 
-                {/* Password */}
                 <div>
                   <label className="ab-field-label">Password</label>
                   <div className="ab-input-wrap">
-                    <input
-                      className="ab-input"
-                      type={showPass ? "text" : "password"}
-                      placeholder="Min 6 characters"
-                      value={form.password}
-                      onChange={patch("password")}
-                      required
-                      style={{ paddingRight: 44 }}
-                    />
-                    <button
-                      type="button"
-                      className="ab-pass-toggle"
-                      onClick={() => setShowPass(!showPass)}
-                    >
+                    <input className="ab-input" type={showPass ? "text" : "password"}
+                      placeholder="Min 6 characters" value={form.password}
+                      onChange={patch("password")} required style={{ paddingRight: 44 }} />
+                    <button type="button" className="ab-pass-toggle" onClick={() => setShowPass(!showPass)}>
                       {showPass ? "🙈" : "👁"}
                     </button>
                   </div>
                 </div>
-
               </div>
 
-              {/* Forgot password — login only */}
-              {mode === "login" && (
-                <div style={{ textAlign: "right", marginBottom: 20, marginTop: -8 }}>
-                  <button
-                    type="button"
-                    style={{
-                      background: "none", border: "none",
-                      color: "rgba(245,158,11,0.7)", fontSize: 12,
-                      cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
-                    }}
-                  >
-                    Forgot password?
-                  </button>
-                </div>
-              )}
-
               <button type="submit" className="ab-submit" disabled={loading}>
-                {loading
-                  ? "VERIFYING..."
-                  : mode === "login"
-                  ? "SIGN IN →"
-                  : "CREATE ACCOUNT →"}
+                {loading ? "PLEASE WAIT..." : mode === "login" ? "SIGN IN →" : "CREATE ACCOUNT →"}
               </button>
             </form>
 
-            {/* Switch mode */}
             <div className="ab-switch">
               {mode === "login" ? "New to AutoBazaar? " : "Already have an account? "}
-              <button
-                type="button"
-                className="ab-switch-btn"
-                onClick={() => setMode(mode === "login" ? "signup" : "login")}
-              >
+              <button type="button" className="ab-switch-btn"
+                onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }}>
                 {mode === "login" ? "Create free account" : "Sign in instead"}
               </button>
             </div>
 
-            <div className="ab-demo-note">
-              <strong>Demo Mode:</strong> Select any role above and click Sign In to
-              instantly explore the full dashboard. No real credentials needed.
-            </div>
-
           </div>
         </div>
-
       </div>
     </>
   );

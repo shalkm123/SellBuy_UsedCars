@@ -1,31 +1,51 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
+import { loginUser, registerUser, getMe } from "../api";
 
-const AuthContext = createContext(null);
+const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [token, setToken] = useState(localStorage.getItem("token") || null);
+  const [loading, setLoading] = useState(true);
 
-  const login = (roleOrObj, name = "") => {
-    // Support both login("buyer", "Name") and login({ role, name, email })
-    if (typeof roleOrObj === "object" && roleOrObj !== null) {
-      const { role, name: objName, email } = roleOrObj;
-      const initials = objName ? objName.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) : role.slice(0,2).toUpperCase();
-      setUser({ id: Date.now(), name: objName || "User", email: email || `${role}@autobazaar.in`, role, avatar: initials });
-      return;
-    }
-    const role = roleOrObj;
-    const users = {
-      buyer: { id: 1, name: name || "Aryan Kapoor", email: "aryan@email.com", role: "buyer", avatar: "AK" },
-      seller: { id: 2, name: name || "Rahul Sharma", email: "rahul@email.com", role: "seller", avatar: "RS" },
-      admin: { id: 99, name: "Admin User", email: "admin@carmarket.in", role: "admin", avatar: "AD" },
+  // On app load, fetch current user if token exists
+  useEffect(() => {
+    const fetchUser = async () => {
+      if (token) {
+        try {
+          const res = await getMe();
+          setUser(res.data);
+        } catch {
+          logout();
+        }
+      }
+      setLoading(false);
     };
-    setUser(users[role]);
+    fetchUser();
+  }, [token]);
+
+  const login = async (email, password) => {
+    const res = await loginUser({ email, password });
+    const { token, user } = res.data;
+    localStorage.setItem("token", token);
+    setToken(token);
+    setUser(user);
+    return user; // return user so pages can redirect based on role
   };
 
-  const logout = () => setUser(null);
+  const register = async (name, email, password, role, phone) => {
+    const res = await registerUser({ name, email, password, role, phone });
+    return res.data;
+  };
+
+  const logout = () => {
+    localStorage.removeItem("token");
+    setToken(null);
+    setUser(null);
+  };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
