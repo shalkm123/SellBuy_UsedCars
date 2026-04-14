@@ -1,11 +1,15 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { createPayment, getCarById } from "../api";
 
 const PaymentPage = () => {
+  const { carId } = useParams();
   const navigate = useNavigate();
   const [paymentMethod, setPaymentMethod] = useState("card");
   const [step, setStep] = useState(1); // 1 = form, 2 = success
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [car, setCar] = useState(null);
 
   const [cardDetails, setCardDetails] = useState({
     name: "",
@@ -16,13 +20,18 @@ const PaymentPage = () => {
 
   const [upiId, setUpiId] = useState("");
 
-  // Mock car details (in real app, get from route state or context)
-  const car = {
-    name: "Maruti Swift VXI 2021",
-    price: 650000,
-    seller: "Rajesh Kumar",
-    image: "🚗",
-  };
+  useEffect(() => {
+    const loadCar = async () => {
+      if (!carId) return;
+      try {
+        const res = await getCarById(carId);
+        setCar(res.data);
+      } catch {
+        setError("Unable to load car details");
+      }
+    };
+    loadCar();
+  }, [carId]);
 
   const formatCurrency = (val) => "₹" + Number(val).toLocaleString("en-IN");
 
@@ -40,10 +49,11 @@ const PaymentPage = () => {
 
   const handlePay = () => {
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      setStep(2);
-    }, 2000);
+    setError("");
+    createPayment({ car_id: carId, payment_method: paymentMethod, currency: "INR" })
+      .then(() => setStep(2))
+      .catch((err) => setError(err.response?.data?.message || "Payment failed"))
+      .finally(() => setLoading(false));
   };
 
   const isFormValid = () => {
@@ -65,12 +75,12 @@ const PaymentPage = () => {
         <div style={{ background: "#fff", borderRadius: 20, padding: "3rem 2.5rem", textAlign: "center", maxWidth: 420, boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
           <div style={{ fontSize: "4rem", marginBottom: "1rem" }}>✅</div>
           <h2 style={{ color: "#16a34a", fontSize: "1.6rem", fontWeight: 700, margin: 0 }}>Payment Successful!</h2>
-          <p style={{ color: "#64748b", marginTop: "0.6rem" }}>
-            Your booking for <strong>{car.name}</strong> has been confirmed.
+            <p style={{ color: "#64748b", marginTop: "0.6rem" }}>
+            Your booking for <strong>{car?.title || "this car"}</strong> has been confirmed.
           </p>
           <div style={{ background: "#f0fdf4", borderRadius: 12, padding: "1rem", margin: "1.5rem 0", textAlign: "left" }}>
             <p style={{ margin: "0.3rem 0", fontSize: "0.9rem", color: "#374151" }}>
-              <strong>Amount Paid:</strong> {formatCurrency(car.price)}
+              <strong>Amount Paid:</strong> {formatCurrency(car?.price || 0)}
             </p>
             <p style={{ margin: "0.3rem 0", fontSize: "0.9rem", color: "#374151" }}>
               <strong>Transaction ID:</strong> TXN{Math.random().toString(36).substring(2, 10).toUpperCase()}
@@ -103,6 +113,8 @@ const PaymentPage = () => {
         <h1 style={{ fontSize: "1.8rem", fontWeight: 700, color: "#1e293b", marginBottom: "1.5rem" }}>
           💳 Complete Payment
         </h1>
+
+        {error && <div style={{ marginBottom: 16, color: "#b91c1c", background: "#fef2f2", border: "1px solid #fecaca", padding: "0.9rem 1rem", borderRadius: 12 }}>{error}</div>}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: "1.5rem" }}>
 
@@ -231,19 +243,19 @@ const PaymentPage = () => {
               <p style={{ fontWeight: 600, color: "#334155", margin: "0 0 1rem" }}>Order Summary</p>
 
               <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1rem", paddingBottom: "1rem", borderBottom: "1px solid #f1f5f9" }}>
-                <div style={{ fontSize: "2.5rem", background: "#f1f5f9", borderRadius: 12, padding: "0.5rem 0.8rem" }}>
-                  {car.image}
+                  <div style={{ width: 56, height: 56, borderRadius: 12, overflow: "hidden", background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {car?.image ? <img src={car.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "🚗"}
                 </div>
                 <div>
-                  <p style={{ margin: 0, fontWeight: 600, fontSize: "0.95rem", color: "#1e293b" }}>{car.name}</p>
-                  <p style={{ margin: "0.2rem 0 0", fontSize: "0.82rem", color: "#64748b" }}>Seller: {car.seller}</p>
+                  <p style={{ margin: 0, fontWeight: 600, fontSize: "0.95rem", color: "#1e293b" }}>{car?.title || "Loading..."}</p>
+                  <p style={{ margin: "0.2rem 0 0", fontSize: "0.82rem", color: "#64748b" }}>Seller: {car?.sellerName || car?.seller_name || "Verified Seller"}</p>
                 </div>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", color: "#475569" }}>
                   <span>Car Price</span>
-                  <span>{formatCurrency(car.price)}</span>
+                  <span>{formatCurrency(car?.price || 0)}</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", color: "#475569" }}>
                   <span>Platform Fee</span>
@@ -255,7 +267,7 @@ const PaymentPage = () => {
                 </div>
                 <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "0.6rem", display: "flex", justifyContent: "space-between", fontWeight: 700, color: "#1e293b" }}>
                   <span>Total</span>
-                  <span>{formatCurrency(car.price + 999 - 500)}</span>
+                  <span>{formatCurrency((car?.price || 0) + 999 - 500)}</span>
                 </div>
               </div>
             </div>
@@ -275,7 +287,7 @@ const PaymentPage = () => {
                 transition: "background 0.2s",
               }}
             >
-              {loading ? "Processing..." : `Pay ${formatCurrency(car.price + 499)}`}
+              {loading ? "Processing..." : `Pay ${formatCurrency((car?.price || 0) + 499)}`}
             </button>
 
             <p style={{ fontSize: "0.78rem", color: "#94a3b8", textAlign: "center" }}>

@@ -44,7 +44,7 @@ export default function SellerDashboard() {
   const [bids, setBids] = useState(INCOMING_BIDS);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const mainMargin = sidebarCollapsed ? 72 : 260;
-  const firstName = user?.name?.split(" ")[0] || "Seller";
+  const firstName = (user?.full_name || user?.name || "Seller").split(" ")[0];
 
   const STATS = [
     { label: "Active Listings", value: "2",   icon: "🚗", color: "#60a5fa", bg: "rgba(96,165,250,.12)" },

@@ -15,8 +15,11 @@ export default function ProtectedRoute({ children, role }) {
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
 
   // Logged in but wrong role → send to their own dashboard
-  if (role && user.role !== role) {
-    const redirect = user.role === "admin" ? "/admin" : user.role === "seller" ? "/seller" : "/buyer";
+  const userRole = String(user.role || "").toLowerCase();
+  const requiredRole = role ? String(role).toLowerCase() : null;
+
+  if (requiredRole && userRole !== requiredRole) {
+    const redirect = userRole === "admin" ? "/dashboard/admin" : userRole === "seller" ? "/dashboard/seller" : "/dashboard/buyer";
     return <Navigate to={redirect} replace />;
   }
 

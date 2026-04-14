@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from "react";
-import { loginUser, registerUser, getMe } from "../api";
+import { loginUser, registerUser, getMe, normalizeUser, normalizeRole } from "../api";
 
 const AuthContext = createContext();
 
@@ -14,7 +14,7 @@ export const AuthProvider = ({ children }) => {
       if (token) {
         try {
           const res = await getMe();
-          setUser(res.data);
+          setUser(normalizeUser(res.data));
         } catch {
           logout();
         }
@@ -29,12 +29,23 @@ export const AuthProvider = ({ children }) => {
     const { token, user } = res.data;
     localStorage.setItem("token", token);
     setToken(token);
-    setUser(user);
-    return user; // return user so pages can redirect based on role
+    const normalizedUser = normalizeUser(user);
+    setUser(normalizedUser);
+    return normalizedUser; // return user so pages can redirect based on role
   };
 
-  const register = async (name, email, password, role, phone) => {
-    const res = await registerUser({ name, email, password, role, phone });
+  const register = async (payload) => {
+    const res = await registerUser({
+      full_name: payload.full_name || payload.name,
+      email: payload.email,
+      password: payload.password,
+      phone_number: payload.phone_number || payload.phone,
+      aadhaar_encrypted: payload.aadhaar_encrypted || payload.aadhaar,
+      age: payload.age,
+      city: payload.city,
+      state: payload.state,
+      role: normalizeRole(payload.role),
+    });
     return res.data;
   };
 

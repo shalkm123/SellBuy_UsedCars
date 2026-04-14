@@ -103,7 +103,7 @@ export default function Sidebar({ role: roleProp, collapsed: collapsedProp = fal
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(collapsedProp);
 
-  const role = roleProp || user?.role || "buyer";
+  const role = String(roleProp || user?.role || "buyer").toLowerCase();
   const sections =
     role === "admin" ? ADMIN_SECTIONS :
     role === "seller" ? SELLER_SECTIONS :
@@ -318,14 +318,14 @@ export default function Sidebar({ role: roleProp, collapsed: collapsedProp = fal
         {/* User card */}
         <div className="sb-user" onClick={() => navigate("/profile")}>
           <div className="sb-avatar">
-            {user?.avatar || user?.name?.[0] || "U"}
+            {user?.avatar || user?.full_name?.[0] || user?.name?.[0] || "U"}
             <div className="sb-online" />
           </div>
           <div
             className="sb-user-info"
             style={{ opacity: isCollapsed ? 0 : 1, transition: "opacity 0.2s" }}
           >
-            <div className="sb-user-name">{user?.name || "Guest"}</div>
+            <div className="sb-user-name">{user?.full_name || user?.name || "Guest"}</div>
             <div className="sb-user-role">{role}</div>
           </div>
         </div>

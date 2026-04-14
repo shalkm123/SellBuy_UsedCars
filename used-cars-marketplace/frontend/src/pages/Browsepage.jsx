@@ -236,7 +236,7 @@ function FilterSection({ label, children }) {
 }
 
 function CarGridCard({ car, i, wishlisted, compared, onWishlist, onCompare, onClick }) {
-  const imgUrl = car.image_url ? `http://localhost:5000${car.image_url}` : `https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=600&q=80`;
+  const imgUrl = car.image || car.image_url || `https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=600&q=80`;
   return (
     <div className="car-card" onClick={onClick} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "12px", overflow: "hidden", cursor: "pointer", animation: `fadeUp 0.5s ${i * 0.05}s ease both` }}>
       <div style={{ position: "relative", height: "190px", overflow: "hidden" }}>
@@ -271,7 +271,7 @@ function CarGridCard({ car, i, wishlisted, compared, onWishlist, onCompare, onCl
 }
 
 function CarListCard({ car, i, wishlisted, onWishlist, onClick }) {
-  const imgUrl = car.image_url ? `http://localhost:5000${car.image_url}` : `https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=400&q=80`;
+  const imgUrl = car.image || car.image_url || `https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=400&q=80`;
   return (
     <div className="car-card" onClick={onClick} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "12px", overflow: "hidden", cursor: "pointer", display: "flex", animation: `fadeUp 0.5s ${i * 0.05}s ease both` }}>
       <div style={{ width: "220px", flexShrink: 0, overflow: "hidden" }}>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { mockCars as cars } from "../data/mockData";
+import { getAllCars } from "../api";
 
 const STATS = [
   { value: "12,400+", label: "Cars Listed" },
@@ -47,6 +48,7 @@ export default function Homepage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [scrollY, setScrollY] = useState(0);
+  const [featuredCars, setFeaturedCars] = useState(cars.slice(0, 6));
 
   useEffect(() => {
     const handleScroll = () => setScrollY(window.scrollY);
@@ -54,7 +56,17 @@ export default function Homepage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const featuredCars = cars.slice(0, 6);
+  useEffect(() => {
+    const loadCars = async () => {
+      try {
+        const res = await getAllCars({ status: "ACTIVE" });
+        setFeaturedCars((res.data || cars).slice(0, 6));
+      } catch {
+        setFeaturedCars(cars.slice(0, 6));
+      }
+    };
+    loadCars();
+  }, []);
 
   return (
     <div style={{ background: "#080808", color: "#e5e7eb", fontFamily: "'DM Sans', sans-serif", minHeight: "100vh", overflowX: "hidden" }}>

@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { mockCars as cars } from "../data/mockData"; // fixed: was { cars }
 import { useAuth } from "../context/AuthContext";
+import { getCarById } from "../api";
 
 const GALLERY_FALLBACKS = [
   "https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=800&q=80",
@@ -25,7 +26,9 @@ export default function CarDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const car = cars.find((c) => String(c.id) === String(id)) || cars[0];
+  const [liveCar, setLiveCar] = useState(null);
+  const car = liveCar || cars.find((c) => String(c.id) === String(id)) || cars[0];
+  const [loading, setLoading] = useState(true);
 
   const [activeImg, setActiveImg] = useState(0);
   const [bidAmount, setBidAmount] = useState("");
@@ -34,8 +37,22 @@ export default function CarDetailPage() {
   const [activeTab, setActiveTab] = useState("overview");
   const [wishlisted, setWishlisted] = useState(false);
 
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await getCarById(id);
+        setLiveCar(res.data);
+      } catch {
+        setLiveCar(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [id]);
+
   const images = car.images?.length
-    ? car.images
+    ? car.images.map((image) => image.image_url || image)
     : [car.image, ...GALLERY_FALLBACKS.slice(1)].filter(Boolean);
   const similarCars = cars.filter((c) => c.id !== car.id).slice(0, 3);
 
@@ -72,6 +89,12 @@ export default function CarDetailPage() {
         input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; }
       `}</style>
 
+      {loading && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(8,8,8,0.92)", color: "#f59e0b", fontFamily: "'Bebas Neue', cursive", fontSize: "2rem", letterSpacing: "0.08em" }}>
+          Loading car details...
+        </div>
+      )}
+
       {/* Breadcrumb */}
       <div style={{
         borderBottom: "1px solid rgba(255,255,255,0.06)",
@@ -81,7 +104,7 @@ export default function CarDetailPage() {
         background: "rgba(8,8,8,0.9)", backdropFilter: "blur(12px)",
         position: "sticky", top: 0, zIndex: 50
       }}>
-        <button onClick={() => navigate("/")} style={{ background: "none", border: "none", color: "#f59e0b", cursor: "pointer", fontFamily: "'Bebas Neue', cursive", fontSize: "1.1rem", letterSpacing: "0.08em" }}>
+              <button onClick={() => navigate("/")} style={{ background: "none", border: "none", color: "#f59e0b", cursor: "pointer", fontFamily: "'Bebas Neue', cursive", fontSize: "1.1rem", letterSpacing: "0.08em" }}>
          
         </button>
         <span></span>
@@ -101,7 +124,7 @@ export default function CarDetailPage() {
               height: "460px", background: "#111",
               border: "1px solid rgba(255,255,255,0.06)"
             }}>
-              <img
+                <img
                 src={images[activeImg]}
                 alt={car.title}   
                 style={{ width: "100%", height: "100%", objectFit: "cover", transition: "all 0.4s ease" }}
@@ -377,7 +400,7 @@ export default function CarDetailPage() {
 
             <button
               className="action-btn"
-              onClick={() => navigate("/payment")}
+              onClick={() => navigate(`/payment/${car.id}`)}
               style={{
                 width: "100%", background: "#f59e0b", border: "none",
                 borderRadius: "8px", padding: "1rem",

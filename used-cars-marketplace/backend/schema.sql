@@ -2,55 +2,158 @@ CREATE DATABASE IF NOT EXISTS sellbuy_cars;
 USE sellbuy_cars;
 
 CREATE TABLE users (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  name VARCHAR(100) NOT NULL,
-  email VARCHAR(150) NOT NULL UNIQUE,
-  password VARCHAR(255) NOT NULL,
-  role ENUM('buyer', 'seller', 'admin') DEFAULT 'buyer',
-  phone VARCHAR(20),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  full_name VARCHAR(100) NOT NULL,
+  email VARCHAR(120) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  phone_number VARCHAR(20) NOT NULL UNIQUE,
+  aadhaar_encrypted TEXT NOT NULL,
+  age INT NOT NULL,
+  city VARCHAR(100) NOT NULL,
+  state VARCHAR(100) NOT NULL,
+  role ENUM('BUYER', 'SELLER', 'ADMIN') NOT NULL,
+  is_verified BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE seller_profiles (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL UNIQUE,
+  business_name VARCHAR(150) NULL,
+  bio TEXT NULL,
+  rating DECIMAL(3,2) DEFAULT 0.00,
+  total_listings INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_seller_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE buyer_profiles (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL UNIQUE,
+  preferred_budget_min DECIMAL(12,2) NULL,
+  preferred_budget_max DECIMAL(12,2) NULL,
+  preferred_location VARCHAR(100) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_buyer_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE cars (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  seller_id INT NOT NULL,
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  seller_id BIGINT NOT NULL,
   title VARCHAR(200) NOT NULL,
   brand VARCHAR(100) NOT NULL,
-  model VARCHAR(100) NOT NULL,
-  year INT NOT NULL,
-  price DECIMAL(12, 2) NOT NULL,
-  fuel ENUM('Petrol', 'Diesel', 'Electric', 'Hybrid', 'CNG') NOT NULL,
-  transmission ENUM('Manual', 'Automatic', 'CVT', 'DCT', 'AMT') NOT NULL,
-  mileage DECIMAL(6, 2),
-  km_driven INT DEFAULT 0,
+  model_name VARCHAR(100) NOT NULL,
+  variant VARCHAR(100) NULL,
+  manufacturing_year INT NOT NULL,
+  car_age_years INT NOT NULL,
+  price DECIMAL(12,2) NOT NULL,
+car_condition ENUM('NEW', 'GOOD', 'MODERATE') NOT NULL,
+  kilometers_driven INT NOT NULL,
+  transmission ENUM('MANUAL', 'AUTOMATIC') NOT NULL,
+  fuel_type ENUM('PETROL', 'DIESEL', 'CNG', 'EV', 'HYBRID') NOT NULL,
+  color VARCHAR(50) NOT NULL,
+  location_city VARCHAR(100) NOT NULL,
+  location_state VARCHAR(100) NOT NULL,
+  ownership ENUM('FIRST', 'SECOND', 'THIRD_PLUS') NOT NULL,
+  seats INT NOT NULL,
   description TEXT,
-  city VARCHAR(100),
-  status ENUM('pending', 'approved', 'rejected', 'sold') DEFAULT 'pending',
-  image_url VARCHAR(500),
+  status ENUM('DRAFT', 'ACTIVE', 'SOLD', 'INACTIVE', 'UNDER_REVIEW') NOT NULL,
+  is_featured BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE CASCADE
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP NULL,
+  CONSTRAINT fk_cars_seller FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE car_images (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  car_id BIGINT NOT NULL,
+  image_url VARCHAR(500) NOT NULL,
+  public_id VARCHAR(255) NOT NULL,
+  sort_order INT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_car_images_car FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE CASCADE
+);
+
+CREATE TABLE wishlists (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  buyer_id BIGINT NOT NULL UNIQUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_wishlists_buyer FOREIGN KEY (buyer_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE wishlist_items (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  wishlist_id BIGINT NOT NULL,
+  car_id BIGINT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_wishlist_items_wishlist FOREIGN KEY (wishlist_id) REFERENCES wishlists(id) ON DELETE CASCADE,
+  CONSTRAINT fk_wishlist_items_car FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_wishlist_car (wishlist_id, car_id)
+);
+
+CREATE TABLE orders (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  buyer_id BIGINT NOT NULL,
+  car_id BIGINT NOT NULL UNIQUE,
+  seller_id BIGINT NOT NULL,
+  order_number VARCHAR(50) NOT NULL UNIQUE,
+  amount DECIMAL(12,2) NOT NULL,
+  currency VARCHAR(10) NOT NULL,
+  status ENUM('PENDING', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED') NOT NULL,
+  payment_status ENUM('PENDING', 'SUCCESS', 'FAILED') NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_orders_buyer FOREIGN KEY (buyer_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_orders_car FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE CASCADE,
+  CONSTRAINT fk_orders_seller FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE payments (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  buyer_id INT NOT NULL,
-  car_id INT NOT NULL,
-  amount DECIMAL(12, 2) NOT NULL,
-  status ENUM('pending', 'completed', 'failed') DEFAULT 'pending',
-  payment_method VARCHAR(50),
-  transaction_id VARCHAR(100),
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  order_id BIGINT NOT NULL UNIQUE,
+  razorpay_order_id VARCHAR(100) NOT NULL,
+  razorpay_payment_id VARCHAR(100) NULL,
+  razorpay_signature VARCHAR(255) NULL,
+  amount DECIMAL(12,2) NOT NULL,
+  currency VARCHAR(10) NOT NULL,
+  status ENUM('CREATED', 'SUCCESS', 'FAILED', 'VERIFIED', 'REFUNDED') NOT NULL,
+  payment_method VARCHAR(50) NULL,
+  paid_at TIMESTAMP NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (buyer_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE CASCADE
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_payments_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+);
+
+CREATE TABLE seller_verification (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL UNIQUE,
+  aadhaar_last4 VARCHAR(4) NOT NULL,
+  verification_status ENUM('PENDING', 'APPROVED', 'REJECTED') NOT NULL,
+  verified_at TIMESTAMP NULL,
+  remarks TEXT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_seller_verification_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE inquiries (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  buyer_id INT NOT NULL,
-  car_id INT NOT NULL,
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  buyer_id BIGINT NOT NULL,
+  car_id BIGINT NOT NULL,
   message TEXT NOT NULL,
   status ENUM('open', 'replied', 'closed') DEFAULT 'open',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (buyer_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE CASCADE
+  CONSTRAINT fk_inquiries_buyer FOREIGN KEY (buyer_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_inquiries_car FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE CASCADE
 );
+
+CREATE INDEX idx_cars_listing_search
+ON cars(status, location_city, price, transmission, fuel_type);
+
+CREATE INDEX idx_cars_filtering
+ON cars(status, location_city, model_name, price, car_age_years, kilometers_driven);

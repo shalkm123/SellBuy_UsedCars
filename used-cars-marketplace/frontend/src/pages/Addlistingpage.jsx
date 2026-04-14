@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { addCar } from "../api";
 
 const STEPS = ["Basic Info", "Vehicle Details", "Photos & Price", "Review"];
 const BRANDS = ["Maruti Suzuki","Hyundai","Honda","Toyota","Tata","Mahindra","Kia","Ford","Volkswagen","Skoda","MG","Renault","Nissan","BMW","Mercedes-Benz","Audi","Other"];
@@ -66,9 +67,35 @@ export default function AddListingPage() {
 
   const handleSubmit = async () => {
     setLoading(true);
-    await new Promise(r => setTimeout(r, 1600));
-    setLoading(false);
-    setSubmitted(true);
+    try {
+      const currentYear = new Date().getFullYear();
+      await addCar({
+        title: `${form.brand} ${form.model}`.trim(),
+        brand: form.brand,
+        model_name: form.model,
+        variant: form.variant,
+        manufacturing_year: Number(form.year),
+        car_age_years: Math.max(currentYear - Number(form.year || currentYear), 0),
+        price: Number(form.price),
+        condition: form.condition === "Excellent" ? "NEW" : form.condition === "Good" ? "GOOD" : "MODERATE",
+        kilometers_driven: Number(form.km || 0),
+        transmission: String(form.transmission || "").toUpperCase(),
+        fuel_type: String(form.fuel || "").toUpperCase(),
+        color: form.color,
+        location_city: form.city,
+        location_state: user?.state || form.city || "",
+        ownership: form.owners === "1" ? "FIRST" : form.owners === "2" ? "SECOND" : "THIRD_PLUS",
+        seats: 5,
+        description: form.description,
+        status: "UNDER_REVIEW",
+        is_featured: false,
+      });
+      setSubmitted(true);
+    } catch {
+      setErrors((prev) => ({ ...prev, submit: "Failed to submit listing" }));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const fmt = (v) => v && !isNaN(v) && Number(v) > 0 ? `₹${(Number(v)/100000).toFixed(1)}L` : "—";
@@ -132,6 +159,7 @@ export default function AddListingPage() {
             POST YOUR <span style={{ color:"#f59e0b" }}>LISTING</span>
           </h1>
           <p style={{ color:"#6b7280", fontSize:"0.9rem" }}>Sell your car fast — reach 12,000+ verified buyers.</p>
+          {errors.submit && <p style={{ color: "#f87171", marginTop: 8 }}>{errors.submit}</p>}
         </div>
 
         {/* Step bar */}

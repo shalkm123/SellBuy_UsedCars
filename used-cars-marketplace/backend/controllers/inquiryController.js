@@ -19,7 +19,7 @@ const createInquiry = async (req, res) => {
 const getInquiriesByCar = async (req, res) => {
   try {
     const [rows] = await db.query(
-      `SELECT i.*, u.name AS buyer_name, u.email AS buyer_email
+      `SELECT i.*, u.full_name AS buyer_name, u.email AS buyer_email, u.phone_number AS buyer_phone
        FROM inquiries i JOIN users u ON i.buyer_id = u.id
        WHERE i.car_id = ? ORDER BY i.created_at DESC`,
       [req.params.car_id]

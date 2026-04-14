@@ -163,8 +163,9 @@ export default function Navbar() {
     navigate("/login");
   };
 
-  const initials = user?.name
-    ? user.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
+  const displayName = user?.full_name || user?.name || "";
+  const initials = displayName
+    ? displayName.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
     : "?";
 
   return (
@@ -196,7 +197,7 @@ export default function Navbar() {
           {user ? (
             <>
               {/* Post listing — seller/admin only */}
-              {(user.role === "seller" || user.role === "admin") && (
+              {(String(user.role).toLowerCase() === "seller" || String(user.role).toLowerCase() === "admin") && (
                 <button className="nav-post-btn" onClick={() => navigate("/post-listing")}>
                   + Post Listing
                 </button>
@@ -212,7 +213,7 @@ export default function Navbar() {
               <div className="nav-icon-btn">❤️</div>
 
               {/* Avatar */}
-              <div className="nav-avatar" title={user.name} onClick={() => navigate(`/dashboard/${user.role}`)}>
+              <div className="nav-avatar" title={displayName} onClick={() => navigate(`/dashboard/${String(user.role).toLowerCase()}`)}>
                 {initials}
               </div>
 

@@ -42,7 +42,7 @@ export default function BuyerDashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const mainMargin = sidebarCollapsed ? 72 : 260;
   const wishlisted = mockCars.filter((c) => mockWishlist.includes(c.id));
-  const firstName = user?.name?.split(" ")[0] || "Buyer";
+  const firstName = (user?.full_name || user?.name || "Buyer").split(" ")[0];
 
   const STATS = [
     { label: "Saved Cars",   value: wishlisted.length, icon: "❤️", color: "#ef4444", bg: "rgba(239,68,68,.12)" },

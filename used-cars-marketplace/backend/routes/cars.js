@@ -6,7 +6,7 @@ const verifyToken = require("../middleware/auth");
 const authorizeRoles = require("../middleware/role");
 const {
   getAllCars, getCarById, addCar, updateCar,
-  deleteCar, updateCarStatus, getMyListings
+  deleteCar, updateCarStatus, getMyListings, getCarImages, addCarImage, deleteCarImage
 } = require("../controllers/carController");
 
 const storage = multer.diskStorage({
@@ -17,6 +17,9 @@ const upload = multer({ storage });
 
 router.get("/", getAllCars);
 router.get("/seller/my-listings", verifyToken, authorizeRoles("seller"), getMyListings);
+router.get("/:id/images", getCarImages);
+router.post("/:id/images", verifyToken, authorizeRoles("seller", "admin"), upload.single("image"), addCarImage);
+router.delete("/images/:imageId", verifyToken, authorizeRoles("seller", "admin"), deleteCarImage);
 router.get("/:id", getCarById);
 router.post("/", verifyToken, authorizeRoles("seller"), upload.single("image"), addCar);
 router.put("/:id", verifyToken, authorizeRoles("seller", "admin"), upload.single("image"), updateCar);

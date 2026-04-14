@@ -193,14 +193,11 @@ export default function LoginPage() {
       if (mode === "login") {
         const user = await login(form.email, form.password);
         // Redirect based on role from server
-        if (user.role === "admin")  navigate("/admin");
-        else if (user.role === "seller") navigate("/seller");
-        else navigate("/buyer");
+        if (user.role === "admin")  navigate("/dashboard/admin");
+        else if (user.role === "seller") navigate("/dashboard/seller");
+        else navigate("/dashboard/buyer");
       } else {
-        await register(form.name, form.email, form.password, role, form.phone);
-        setMode("login");
-        setError("");
-        alert("Registered successfully! Please login.");
+        navigate("/register");
       }
     } catch (err) {
       setError(err.response?.data?.message || "Invalid email or password");
@@ -349,10 +346,10 @@ export default function LoginPage() {
             </form>
 
             <div className="ab-switch">
-              {mode === "login" ? "New to AutoBazaar? " : "Already have an account? "}
+              {mode === "login" ? "New to AutoBazaar? " : "Need the full sign-up flow? "}
               <button type="button" className="ab-switch-btn"
-                onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }}>
-                {mode === "login" ? "Create free account" : "Sign in instead"}
+                  onClick={() => { if (mode === "login") navigate("/register"); else { setMode("login"); setError(""); } }}>
+                  {mode === "login" ? "Create free account" : "Sign in instead"}
               </button>
             </div>
 
