@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { getAllCars } from "../api";
+import { useAuth } from "../context/AuthContext";
+import {
+  addWishlistItem,
+  getAllCars,
+  getMyWishlist,
+  removeWishlistItem,
+} from "../api";
 
 const BRANDS = ["All", "Maruti Suzuki", "Hyundai", "Honda", "Toyota", "Tata", "Mahindra", "Kia", "Ford"];
 const FUEL_TYPES = ["All", "Petrol", "Diesel", "CNG", "Electric", "Hybrid"];
@@ -14,6 +20,7 @@ const SORT_OPTIONS = [
 
 export default function BrowsePage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchParams] = useSearchParams();
 
   const [cars,         setCars]         = useState([]);
@@ -28,8 +35,27 @@ export default function BrowsePage() {
   const [sort,         setSort]         = useState("price_asc");
   const [viewMode,     setViewMode]     = useState("grid");
   const [wishlist,     setWishlist]     = useState([]);
-  const [compareList,  setCompareList]  = useState([]);
   const [sidebarOpen,  setSidebarOpen]  = useState(true);
+
+  const toId = (value) => String(value);
+
+  useEffect(() => {
+    const loadSelectionState = async () => {
+      if (String(user?.role || "").toLowerCase() === "buyer") {
+        try {
+          const res = await getMyWishlist();
+          const ids = (res.data?.items || []).map((item) => toId(item.id));
+          setWishlist(ids);
+        } catch {
+          setWishlist([]);
+        }
+      } else {
+        setWishlist([]);
+      }
+    };
+
+    loadSelectionState();
+  }, [user]);
 
   const fetchCars = async () => {
     setLoading(true);
@@ -63,8 +89,25 @@ export default function BrowsePage() {
     return 0;
   });
 
-  const toggleWishlist  = (id) => setWishlist((w)  => w.includes(id)  ? w.filter((x) => x !== id)  : [...w, id]);
-  const toggleCompare   = (id) => setCompareList((c) => c.includes(id) ? c.filter((x) => x !== id)  : c.length < 3 ? [...c, id] : c);
+  const toggleWishlist = async (id) => {
+    const carId = toId(id);
+    if (String(user?.role || "").toLowerCase() !== "buyer") {
+      navigate("/login");
+      return;
+    }
+    const isSaved = wishlist.includes(carId);
+    setWishlist((prev) => (isSaved ? prev.filter((item) => item !== carId) : [...prev, carId]));
+
+    try {
+      if (isSaved) {
+        await removeWishlistItem(carId);
+      } else {
+        await addWishlistItem({ car_id: carId });
+      }
+    } catch {
+      setWishlist((prev) => (isSaved ? [...prev, carId] : prev.filter((item) => item !== carId)));
+    }
+  };
   const clearFilters    = () => { setSearch(""); setBrand("All"); setFuel("All"); setTransmission("All"); setCity("All"); setMaxPrice(3000000); };
 
   return (
@@ -169,10 +212,8 @@ export default function BrowsePage() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "1.25rem" }}>
                 {sorted.map((car, i) => (
                   <CarGridCard key={car.id} car={car} i={i}
-                    wishlisted={wishlist.includes(car.id)}
-                    compared={compareList.includes(car.id)}
+                    wishlisted={wishlist.includes(String(car.id))}
                     onWishlist={() => toggleWishlist(car.id)}
-                    onCompare={() => toggleCompare(car.id)}
                     onClick={() => navigate(`/car/${car.id}`)} />
                 ))}
               </div>
@@ -180,10 +221,8 @@ export default function BrowsePage() {
               <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                 {sorted.map((car, i) => (
                   <CarListCard key={car.id} car={car} i={i}
-                    wishlisted={wishlist.includes(car.id)}
-                    compared={compareList.includes(car.id)}
+                    wishlisted={wishlist.includes(String(car.id))}
                     onWishlist={() => toggleWishlist(car.id)}
-                    onCompare={() => toggleCompare(car.id)}
                     onClick={() => navigate(`/car/${car.id}`)} />
                 ))}
               </div>
@@ -201,24 +240,6 @@ export default function BrowsePage() {
         </main>
       </div>
 
-      {/* Compare bar */}
-      {compareList.length > 0 && (
-        <div style={{ position: "fixed", bottom: "1.5rem", left: "50%", transform: "translateX(-50%)", background: "rgba(15,15,15,0.95)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: "12px", padding: "1rem 1.5rem", display: "flex", alignItems: "center", gap: "1rem", backdropFilter: "blur(20px)", boxShadow: "0 20px 60px rgba(0,0,0,0.6)", zIndex: 100 }}>
-          <span style={{ color: "#f59e0b", fontSize: "0.85rem", fontWeight: 600 }}>{compareList.length}/3 selected</span>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            {compareList.map((id) => {
-              const c = cars.find((x) => x.id === id);
-              return (
-                <div key={id} style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "6px", padding: "4px 10px", fontSize: "0.78rem", color: "#f59e0b", display: "flex", alignItems: "center", gap: "6px" }}>
-                  {c?.title}
-                  <button onClick={() => toggleCompare(id)} style={{ background: "none", border: "none", color: "#f59e0b", cursor: "pointer", fontSize: "0.9rem", padding: 0 }}>×</button>
-                </div>
-              );
-            })}
-          </div>
-          <button onClick={() => navigate("/compare")} style={{ background: "#f59e0b", border: "none", borderRadius: "6px", padding: "0.5rem 1.25rem", color: "#000", fontFamily: "'Bebas Neue', cursive", fontSize: "0.95rem", letterSpacing: "0.08em", cursor: "pointer" }}>COMPARE NOW →</button>
-        </div>
-      )}
     </div>
   );
 }
@@ -235,18 +256,22 @@ function FilterSection({ label, children }) {
   );
 }
 
-function CarGridCard({ car, i, wishlisted, compared, onWishlist, onCompare, onClick }) {
+function CarGridCard({ car, i, wishlisted, onWishlist, onClick }) {
   const imgUrl = car.image || car.image_url || `https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=600&q=80`;
+  const trustScoreLabel = car.trustScore == null ? "Score pending" : `${car.trustScore}/100`;
+  const trustTone = car.trustScore == null ? "#6b7280" : car.trustScore >= 85 ? "#22c55e" : car.trustScore >= 70 ? "#f59e0b" : "#ef4444";
   return (
     <div className="car-card" onClick={onClick} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "12px", overflow: "hidden", cursor: "pointer", animation: `fadeUp 0.5s ${i * 0.05}s ease both` }}>
       <div style={{ position: "relative", height: "190px", overflow: "hidden" }}>
         <img src={imgUrl} alt={car.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.6), transparent 60%)" }} />
         <div style={{ position: "absolute", top: "10px", right: "10px", display: "flex", gap: "6px" }}>
+          <div style={{ background: "rgba(0,0,0,0.8)", border: `1px solid ${trustTone}55`, borderRadius: "999px", padding: "4px 8px", fontSize: "0.7rem", color: trustTone, fontWeight: 700, backdropFilter: "blur(8px)" }}>
+            {trustScoreLabel}
+          </div>
           <button className="wish-btn" onClick={(e) => { e.stopPropagation(); onWishlist(); }} style={{ background: "rgba(0,0,0,0.7)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "6px", width: "32px", height: "32px", color: wishlisted ? "#ef4444" : "#9ca3af", cursor: "pointer", fontSize: "0.9rem", display: "flex", alignItems: "center", justifyContent: "center" }}>
             {wishlisted ? "♥" : "♡"}
           </button>
-          <button onClick={(e) => { e.stopPropagation(); onCompare(); }} style={{ background: compared ? "rgba(245,158,11,0.8)" : "rgba(0,0,0,0.7)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "6px", width: "32px", height: "32px", color: compared ? "#000" : "#9ca3af", cursor: "pointer", fontSize: "0.7rem", display: "flex", alignItems: "center", justifyContent: "center" }}>⊕</button>
         </div>
       </div>
       <div style={{ padding: "1rem" }}>
@@ -264,6 +289,9 @@ function CarGridCard({ car, i, wishlisted, compared, onWishlist, onCompare, onCl
             <span key={tag} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "4px", padding: "2px 8px", fontSize: "0.72rem", color: "#9ca3af" }}>{tag}</span>
           ))}
         </div>
+        <div style={{ marginTop: 10, fontSize: 12, color: car.trustScore == null ? "#9ca3af" : trustTone, fontWeight: 700 }}>
+          Trust: {trustScoreLabel}
+        </div>
         <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.3)", marginTop: "8px" }}>by {car.seller_name}</p>
       </div>
     </div>
@@ -272,6 +300,8 @@ function CarGridCard({ car, i, wishlisted, compared, onWishlist, onCompare, onCl
 
 function CarListCard({ car, i, wishlisted, onWishlist, onClick }) {
   const imgUrl = car.image || car.image_url || `https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=400&q=80`;
+  const trustScoreLabel = car.trustScore == null ? "Score pending" : `${car.trustScore}/100`;
+  const trustTone = car.trustScore == null ? "#6b7280" : car.trustScore >= 85 ? "#22c55e" : car.trustScore >= 70 ? "#f59e0b" : "#ef4444";
   return (
     <div className="car-card" onClick={onClick} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "12px", overflow: "hidden", cursor: "pointer", display: "flex", animation: `fadeUp 0.5s ${i * 0.05}s ease both` }}>
       <div style={{ width: "220px", flexShrink: 0, overflow: "hidden" }}>
@@ -287,6 +317,7 @@ function CarListCard({ car, i, wishlisted, onWishlist, onClick }) {
             <span>⛽ {car.fuel}</span>
             <span>⚙️ {car.transmission}</span>
           </div>
+          <div style={{ fontSize: 12, color: trustTone, fontWeight: 700, marginBottom: 8 }}>Trust: {trustScoreLabel}</div>
           <p style={{ color: "#9ca3af", fontSize: "0.82rem", lineHeight: 1.5, maxWidth: "400px" }}>{car.description || "Well-maintained vehicle. All documents up to date."}</p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "space-between" }}>

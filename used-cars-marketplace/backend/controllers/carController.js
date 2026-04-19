@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { createAdminAuditLog } = require("../utils/adminAudit");
 
 const currentYear = new Date().getFullYear();
 
@@ -63,7 +64,66 @@ const getCarById = async (req, res) => {
       "SELECT id, image_url, public_id, sort_order, created_at FROM car_images WHERE car_id = ? ORDER BY sort_order ASC, id ASC",
       [req.params.id]
     );
-    res.json({ ...rows[0], images, model: rows[0].model_name, city: rows[0].location_city, fuel: rows[0].fuel_type });
+    const [trustFactors] = await db.query(
+      `SELECT factor_key, factor_label, factor_value, impact_score, explanation
+       FROM car_trust_factors
+       WHERE car_id = ?
+       ORDER BY id ASC`,
+      [req.params.id]
+    );
+    const [emiRows] = await db.query(
+      `SELECT principal, annual_interest_rate, tenure_months, monthly_emi, total_interest, total_payable, calculated_at
+       FROM car_emi_quotes
+       WHERE car_id = ?
+       LIMIT 1`,
+      [req.params.id]
+    );
+
+    res.json({
+      ...rows[0],
+      images,
+      trust_factors: trustFactors,
+      emi_quote: emiRows[0] || null,
+      model: rows[0].model_name,
+      city: rows[0].location_city,
+      fuel: rows[0].fuel_type,
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+const getCarEmiQuote = async (req, res) => {
+  try {
+    const [cars] = await db.query("SELECT id FROM cars WHERE id = ? AND deleted_at IS NULL", [req.params.id]);
+    if (cars.length === 0) return res.status(404).json({ message: "Car not found" });
+
+    const [rows] = await db.query(
+      `SELECT principal, annual_interest_rate, tenure_months, monthly_emi, total_interest, total_payable, calculated_at
+       FROM car_emi_quotes
+       WHERE car_id = ?
+       LIMIT 1`,
+      [req.params.id]
+    );
+
+    if (rows.length === 0) return res.status(404).json({ message: "EMI quote not available" });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+const enqueueTrustScoreRecompute = async (req, res) => {
+  try {
+    const [cars] = await db.query("SELECT id FROM cars WHERE id = ? AND deleted_at IS NULL", [req.params.id]);
+    if (cars.length === 0) return res.status(404).json({ message: "Car not found" });
+
+    const [result] = await db.query(
+      "INSERT INTO trust_score_jobs (car_id, reason, status) VALUES (?, 'MANUAL_RECOMPUTE', 'PENDING')",
+      [req.params.id]
+    );
+
+    res.status(202).json({ message: "Trust score recompute queued", jobId: result.insertId });
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message });
   }
@@ -80,6 +140,7 @@ const addCar = async (req, res) => {
     car_age_years,
     price,
     condition,
+    car_condition,
     kilometers_driven,
     transmission,
     fuel_type,
@@ -93,7 +154,9 @@ const addCar = async (req, res) => {
     is_featured,
   } = req.body;
 
-  if (!title || !brand || !model_name || !manufacturing_year || !price || !condition || !kilometers_driven || !transmission || !fuel_type || !color || !location_city || !location_state || !ownership || !seats) {
+  const effectiveCondition = car_condition || condition;
+
+  if (!title || !brand || !model_name || !manufacturing_year || !price || !effectiveCondition || !kilometers_driven || !transmission || !fuel_type || !color || !location_city || !location_state || !ownership || !seats) {
     return res.status(400).json({ message: "Missing required fields" });
   }
 
@@ -102,9 +165,12 @@ const addCar = async (req, res) => {
     : Math.max(currentYear - Number(manufacturing_year), 0);
   const carStatus = normalizeStatus(status, "UNDER_REVIEW");
   try {
+    const warnings = [];
+    if (req.uploadWarning) warnings.push(req.uploadWarning);
+
     const [result] = await db.query(
       `INSERT INTO cars (
-        seller_id, title, brand, model_name, variant, manufacturing_year, car_age_years, price, condition,
+        seller_id, title, brand, model_name, variant, manufacturing_year, car_age_years, price, car_condition,
         kilometers_driven, transmission, fuel_type, color, location_city, location_state, ownership, seats,
         description, status, is_featured
       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -117,7 +183,7 @@ const addCar = async (req, res) => {
         manufacturing_year,
         ageYears,
         price,
-        normalizeStatus(condition),
+        normalizeStatus(effectiveCondition),
         kilometers_driven,
         normalizeStatus(transmission),
         normalizeStatus(fuel_type),
@@ -133,13 +199,17 @@ const addCar = async (req, res) => {
     );
 
     if (req.file) {
-      await db.query(
-        "INSERT INTO car_images (car_id, image_url, public_id, sort_order) VALUES (?, ?, ?, ?)",
-        [result.insertId, `/uploads/${req.file.filename}`, req.file.filename, 1]
-      );
+      try {
+        await db.query(
+          "INSERT INTO car_images (car_id, image_url, public_id, sort_order) VALUES (?, ?, ?, ?)",
+          [result.insertId, `/uploads/${req.file.filename}`, req.file.filename, 1]
+        );
+      } catch {
+        warnings.push("Image metadata could not be saved, but listing data was saved.");
+      }
     }
 
-    res.status(201).json({ message: "Car listing submitted for review", carId: result.insertId });
+    res.status(201).json({ message: "Car listing submitted for review", carId: result.insertId, warnings });
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message });
   }
@@ -148,6 +218,9 @@ const addCar = async (req, res) => {
 // PUT /cars/:id — seller updates own listing
 const updateCar = async (req, res) => {
   try {
+    const warnings = [];
+    if (req.uploadWarning) warnings.push(req.uploadWarning);
+
     const [rows] = await db.query("SELECT * FROM cars WHERE id = ? AND deleted_at IS NULL", [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ message: "Car not found" });
     if (rows[0].seller_id !== req.user.id && String(req.user.role).toUpperCase() !== "ADMIN") {
@@ -162,7 +235,7 @@ const updateCar = async (req, res) => {
       manufacturing_year: req.body.manufacturing_year ?? rows[0].manufacturing_year,
       car_age_years: req.body.car_age_years ?? rows[0].car_age_years,
       price: req.body.price ?? rows[0].price,
-      condition: normalizeStatus(req.body.condition, rows[0].condition),
+      car_condition: normalizeStatus(req.body.car_condition || req.body.condition, rows[0].car_condition),
       kilometers_driven: req.body.kilometers_driven ?? rows[0].kilometers_driven,
       transmission: normalizeStatus(req.body.transmission, rows[0].transmission),
       fuel_type: normalizeStatus(req.body.fuel_type, rows[0].fuel_type),
@@ -178,7 +251,7 @@ const updateCar = async (req, res) => {
 
     await db.query(
       `UPDATE cars SET
-        title=?, brand=?, model_name=?, variant=?, manufacturing_year=?, car_age_years=?, price=?, condition=?,
+        title=?, brand=?, model_name=?, variant=?, manufacturing_year=?, car_age_years=?, price=?, car_condition=?,
         kilometers_driven=?, transmission=?, fuel_type=?, color=?, location_city=?, location_state=?, ownership=?,
         seats=?, description=?, status=?, is_featured=?
        WHERE id=?`,
@@ -190,7 +263,7 @@ const updateCar = async (req, res) => {
         updatedFields.manufacturing_year,
         updatedFields.car_age_years,
         updatedFields.price,
-        updatedFields.condition,
+        updatedFields.car_condition,
         updatedFields.kilometers_driven,
         updatedFields.transmission,
         updatedFields.fuel_type,
@@ -207,24 +280,28 @@ const updateCar = async (req, res) => {
     );
 
     if (req.file) {
-      const [imageRows] = await db.query(
-        "SELECT id FROM car_images WHERE car_id = ? ORDER BY sort_order ASC, id ASC LIMIT 1",
-        [req.params.id]
-      );
-      if (imageRows.length > 0) {
-        await db.query(
-          "UPDATE car_images SET image_url = ?, public_id = ? WHERE id = ?",
-          [`/uploads/${req.file.filename}`, req.file.filename, imageRows[0].id]
+      try {
+        const [imageRows] = await db.query(
+          "SELECT id FROM car_images WHERE car_id = ? ORDER BY sort_order ASC, id ASC LIMIT 1",
+          [req.params.id]
         );
-      } else {
-        await db.query(
-          "INSERT INTO car_images (car_id, image_url, public_id, sort_order) VALUES (?, ?, ?, ?)",
-          [req.params.id, `/uploads/${req.file.filename}`, req.file.filename, 1]
-        );
+        if (imageRows.length > 0) {
+          await db.query(
+            "UPDATE car_images SET image_url = ?, public_id = ? WHERE id = ?",
+            [`/uploads/${req.file.filename}`, req.file.filename, imageRows[0].id]
+          );
+        } else {
+          await db.query(
+            "INSERT INTO car_images (car_id, image_url, public_id, sort_order) VALUES (?, ?, ?, ?)",
+            [req.params.id, `/uploads/${req.file.filename}`, req.file.filename, 1]
+          );
+        }
+      } catch {
+        warnings.push("Image metadata could not be updated, but listing data was saved.");
       }
     }
 
-    res.json({ message: "Car updated successfully" });
+    res.json({ message: "Car updated successfully", warnings });
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message });
   }
@@ -253,7 +330,21 @@ const updateCarStatus = async (req, res) => {
     return res.status(400).json({ message: "Invalid status" });
   }
   try {
+    const [rows] = await db.query("SELECT status FROM cars WHERE id = ?", [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ message: "Car not found" });
+
     await db.query("UPDATE cars SET status = ? WHERE id = ?", [status, req.params.id]);
+
+    if (String(req.user?.role || "").toUpperCase() === "ADMIN") {
+      await createAdminAuditLog({
+        actorUserId: req.user.id,
+        actionType: "CAR_STATUS_UPDATED",
+        targetType: "CAR",
+        targetId: Number(req.params.id),
+        metadata: { previousStatus: rows[0].status, nextStatus: status },
+      });
+    }
+
     res.json({ message: `Car status updated to ${status}` });
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message });
@@ -335,4 +426,17 @@ const deleteCarImage = async (req, res) => {
   }
 };
 
-module.exports = { getAllCars, getCarById, addCar, updateCar, deleteCar, updateCarStatus, getMyListings, getCarImages, addCarImage, deleteCarImage };
+module.exports = {
+  getAllCars,
+  getCarById,
+  getCarEmiQuote,
+  enqueueTrustScoreRecompute,
+  addCar,
+  updateCar,
+  deleteCar,
+  updateCarStatus,
+  getMyListings,
+  getCarImages,
+  addCarImage,
+  deleteCarImage,
+};

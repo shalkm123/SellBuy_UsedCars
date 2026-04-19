@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { sendChatMessage } from "../api";
+import { useNavigate } from "react-router-dom";
+import { getChatSession, sendChatMessage } from "../api";
 
 const SUGGESTIONS = [
   "Find me a sedan under ₹8 lakhs",
@@ -13,6 +14,7 @@ const SUGGESTIONS = [
 const QUICK_FILTERS = ["Sedan", "SUV", "Hatchback", "EV", "Luxury", "Under ₹5L"];
 
 let msgId = 0;
+const CHAT_SESSION_KEY = "chatbot_session_id";
 const initialMessages = [
   {
     id: msgId++,
@@ -23,33 +25,78 @@ const initialMessages = [
 ];
 
 export default function ChatbotPage() {
+  const navigate = useNavigate();
   const [messages,     setMessages]     = useState(initialMessages);
   const [input,        setInput]        = useState("");
   const [typing,       setTyping]       = useState(false);
   const [activeFilter, setActiveFilter] = useState(null);
+  const [recommendations, setRecommendations] = useState([]);
+  const [summary, setSummary] = useState("");
   const bottomRef = useRef(null);
   const inputRef  = useRef(null);
+  const [sessionId, setSessionId] = useState(() => localStorage.getItem(CHAT_SESSION_KEY) || "");
+
+  useEffect(() => {
+    const loadSession = async () => {
+      if (!sessionId) return;
+      try {
+        const res = await getChatSession(sessionId);
+        const sessionMessages = (res.data?.messages || []).map((message) => ({
+          id: msgId++,
+          role: message.role,
+          text: message.text,
+          time: new Date(message.time),
+        }));
+        if (sessionMessages.length > 0) {
+          setMessages(sessionMessages);
+        }
+      } catch {
+        localStorage.removeItem(CHAT_SESSION_KEY);
+        setSessionId("");
+      }
+    };
+
+    loadSession();
+  }, [sessionId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, typing]);
+  }, [messages, typing, recommendations]);
 
   const sendMessage = async (text) => {
     const userText = text || input.trim();
     if (!userText || typing) return;
     setInput("");
+    setSummary("");
 
     setMessages((prev) => [...prev, { id: msgId++, role: "user", text: userText, time: new Date() }]);
     setTyping(true);
 
     try {
-      const res = await sendChatMessage(userText);
+      const res = await sendChatMessage(userText, sessionId || undefined);
+      const nextSessionId = String(res.data?.session_id || sessionId || "");
+      if (nextSessionId) {
+        setSessionId(nextSessionId);
+        localStorage.setItem(CHAT_SESSION_KEY, nextSessionId);
+      }
+
+      setRecommendations(Array.isArray(res.data?.recommendations) ? res.data.recommendations : []);
+      setSummary(res.data?.summary || "");
       setMessages((prev) => [...prev, { id: msgId++, role: "bot", text: res.data.reply, time: new Date() }]);
     } catch {
       setMessages((prev) => [...prev, { id: msgId++, role: "bot", text: "Sorry, something went wrong. Please try again.", time: new Date() }]);
     } finally {
       setTyping(false);
     }
+  };
+
+  const clearChat = () => {
+    setMessages(initialMessages);
+    setRecommendations([]);
+    setSummary("");
+    setSessionId("");
+    localStorage.removeItem(CHAT_SESSION_KEY);
+    msgId = initialMessages.length;
   };
 
   const formatTime = (date) => date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
@@ -128,7 +175,8 @@ export default function ChatbotPage() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="header-btn" onClick={() => setMessages(initialMessages)}>🗑️ Clear Chat</button>
+            <button className="header-btn" onClick={clearChat}>🗑️ Clear Chat</button>
+            <button className="header-btn" onClick={() => navigate("/browse")}>Browse Cars</button>
           </div>
         </div>
 
@@ -181,6 +229,43 @@ export default function ChatbotPage() {
                   <div className="typing-bubble">
                     <div className="typing-dot" /><div className="typing-dot" /><div className="typing-dot" />
                   </div>
+                </div>
+              )}
+
+              {recommendations.length > 0 && (
+                <div style={{ marginTop: 4, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12 }}>
+                  {recommendations.slice(0, 3).map((car) => (
+                    <button
+                      key={car.id}
+                      onClick={() => navigate(`/car/${car.id}`)}
+                      style={{
+                        textAlign: "left",
+                        background: "rgba(255,255,255,0.03)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: 14,
+                        overflow: "hidden",
+                        color: "#fff",
+                        cursor: "pointer",
+                        padding: 0,
+                      }}
+                    >
+                      <img src={car.image_url || car.image || "https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=800&q=80"} alt={car.title} style={{ width: "100%", height: 130, objectFit: "cover" }} />
+                      <div style={{ padding: 12 }}>
+                        <div style={{ fontWeight: 700, marginBottom: 4 }}>{car.title}</div>
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,.6)", marginBottom: 8 }}>{car.city} · {car.year} · {Number(car.km || 0).toLocaleString()} km</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ color: "#f59e0b", fontWeight: 700 }}>₹{Number(car.price || 0).toLocaleString("en-IN")}</span>
+                          <span style={{ fontSize: 11, color: "rgba(255,255,255,.45)" }}>{car.match_reason}</span>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {summary && (
+                <div style={{ marginTop: 14, color: "rgba(255,255,255,.45)", fontSize: 12 }}>
+                  {summary}
                 </div>
               )}
               <div ref={bottomRef} />

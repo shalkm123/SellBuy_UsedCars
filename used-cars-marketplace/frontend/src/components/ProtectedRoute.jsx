@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
-export default function ProtectedRoute({ children, role }) {
+export default function ProtectedRoute({ children, role, roles }) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
@@ -16,9 +16,13 @@ export default function ProtectedRoute({ children, role }) {
 
   // Logged in but wrong role → send to their own dashboard
   const userRole = String(user.role || "").toLowerCase();
-  const requiredRole = role ? String(role).toLowerCase() : null;
+  const requiredRoles = Array.isArray(roles)
+    ? roles.map((item) => String(item).toLowerCase())
+    : role
+      ? [String(role).toLowerCase()]
+      : [];
 
-  if (requiredRole && userRole !== requiredRole) {
+  if (requiredRoles.length > 0 && !requiredRoles.includes(userRole)) {
     const redirect = userRole === "admin" ? "/dashboard/admin" : userRole === "seller" ? "/dashboard/seller" : "/dashboard/buyer";
     return <Navigate to={redirect} replace />;
   }

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { getAdminNavStats, getBuyerNavStats, getSellerNavStats } from "../api";
 
 const BUYER_SECTIONS = [
   {
@@ -13,8 +14,8 @@ const BUYER_SECTIONS = [
   {
     title: "My Activity",
     items: [
-      { icon: "❤️", label: "Wishlist", href: "/wishlist", badge: "3" },
-      { icon: "💬", label: "Messages", href: "/messages", badge: "5" },
+      { icon: "❤️", label: "Wishlist", href: "/wishlist" },
+      { icon: "💬", label: "Messages", href: "/messages" },
       { icon: "🏷️", label: "My Bids", href: "/bids" },
       { icon: "💰", label: "My Offers", href: "/offers" },
     ],
@@ -41,15 +42,15 @@ const SELLER_SECTIONS = [
     title: "Main",
     items: [
       { icon: "🏠", label: "Dashboard", href: "/dashboard/seller" },
-      { icon: "🚗", label: "My Listings", href: "/my-listings", badge: "2" },
+      { icon: "🚗", label: "My Listings", href: "/my-listings" },
       { icon: "➕", label: "Add Listing", href: "/add-listing" },
     ],
   },
   {
     title: "Activity",
     items: [
-      { icon: "⚡", label: "Incoming Bids", href: "/bids", badge: "4" },
-      { icon: "💬", label: "Messages", href: "/messages", badge: "8" },
+      { icon: "⚡", label: "Incoming Bids", href: "/bids" },
+      { icon: "💬", label: "Messages", href: "/messages" },
       { icon: "📊", label: "Analytics", href: "/analytics" },
     ],
   },
@@ -65,7 +66,7 @@ const SELLER_SECTIONS = [
     items: [
       { icon: "👤", label: "Profile", href: "/profile" },
       { icon: "⚙️", label: "Settings", href: "/settings" },
-      { icon: "🛡️", label: "Verification", href: "/verify", badge: "!" },
+      { icon: "🛡️", label: "Verification", href: "/verify" },
     ],
   },
 ];
@@ -75,8 +76,8 @@ const ADMIN_SECTIONS = [
     title: "Control Center",
     items: [
       { icon: "📊", label: "Overview", href: "/dashboard/admin" },
-      { icon: "🛡️", label: "Approvals", href: "/approvals", badge: "18" },
-      { icon: "⚠️", label: "Fraud Alerts", href: "/fraud", badge: "7" },
+      { icon: "🛡️", label: "Approvals", href: "/approvals" },
+      { icon: "⚠️", label: "Fraud Alerts", href: "/fraud" },
     ],
   },
   {
@@ -102,12 +103,103 @@ export default function Sidebar({ role: roleProp, collapsed: collapsedProp = fal
   const navigate = useNavigate();
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(collapsedProp);
+  const [adminStats, setAdminStats] = useState({ approvals: 0, fraud_alerts: 0, messages: 0 });
+  const [sellerStats, setSellerStats] = useState({ total_listings: 0, incoming_bids_new: 0, unread_messages: 0, needs_verification: false });
+  const [buyerStats, setBuyerStats] = useState({ wishlist_items: 0, open_messages: 0, active_bids: 0, offers_total: 0 });
 
   const role = String(roleProp || user?.role || "buyer").toLowerCase();
+
+  useEffect(() => {
+    const loadStats = async () => {
+      if (role === "admin") {
+        try {
+          const res = await getAdminNavStats();
+          setAdminStats({
+            approvals: Number(res.data?.approvals || 0),
+            fraud_alerts: Number(res.data?.fraud_alerts || 0),
+            messages: Number(res.data?.messages || 0),
+          });
+        } catch {
+          setAdminStats({ approvals: 0, fraud_alerts: 0, messages: 0 });
+        }
+      }
+
+      if (role === "seller") {
+        try {
+          const res = await getSellerNavStats();
+          setSellerStats({
+            total_listings: Number(res.data?.total_listings || 0),
+            incoming_bids_new: Number(res.data?.incoming_bids_new || 0),
+            unread_messages: Number(res.data?.unread_messages || 0),
+            needs_verification: Boolean(res.data?.needs_verification),
+          });
+        } catch {
+          setSellerStats({ total_listings: 0, incoming_bids_new: 0, unread_messages: 0, needs_verification: false });
+        }
+      }
+
+      if (role === "buyer") {
+        try {
+          const res = await getBuyerNavStats();
+          setBuyerStats({
+            wishlist_items: Number(res.data?.wishlist_items || 0),
+            open_messages: Number(res.data?.open_messages || 0),
+            active_bids: Number(res.data?.active_bids || 0),
+            offers_total: Number(res.data?.offers_total || 0),
+          });
+        } catch {
+          setBuyerStats({ wishlist_items: 0, open_messages: 0, active_bids: 0, offers_total: 0 });
+        }
+      }
+    };
+    loadStats();
+  }, [role]);
+
+  const withAdminBadges = (inputSections) => {
+    if (role !== "admin") return inputSections;
+    return inputSections.map((section) => ({
+      ...section,
+      items: section.items.map((item) => {
+        if (item.href === "/approvals") return { ...item, badge: String(adminStats.approvals || 0) };
+        if (item.href === "/fraud") return { ...item, badge: String(adminStats.fraud_alerts || 0) };
+        if (item.href === "/messages") return { ...item, badge: String(adminStats.messages || 0) };
+        return item;
+      }),
+    }));
+  };
+
+  const withSellerBadges = (inputSections) => {
+    if (role !== "seller") return inputSections;
+    return inputSections.map((section) => ({
+      ...section,
+      items: section.items.map((item) => {
+        if (item.href === "/my-listings") return { ...item, badge: String(sellerStats.total_listings || 0) };
+        if (item.href === "/bids") return { ...item, badge: String(sellerStats.incoming_bids_new || 0) };
+        if (item.href === "/messages") return { ...item, badge: String(sellerStats.unread_messages || 0) };
+        if (item.href === "/verify") return { ...item, badge: sellerStats.needs_verification ? "!" : "" };
+        return item;
+      }),
+    }));
+  };
+
+  const withBuyerBadges = (inputSections) => {
+    if (role !== "buyer") return inputSections;
+    return inputSections.map((section) => ({
+      ...section,
+      items: section.items.map((item) => {
+        if (item.href === "/wishlist") return { ...item, badge: String(buyerStats.wishlist_items || 0) };
+        if (item.href === "/messages") return { ...item, badge: String(buyerStats.open_messages || 0) };
+        if (item.href === "/bids") return { ...item, badge: String(buyerStats.active_bids || 0) };
+        if (item.href === "/offers") return { ...item, badge: String(buyerStats.offers_total || 0) };
+        return item;
+      }),
+    }));
+  };
+
   const sections =
-    role === "admin" ? ADMIN_SECTIONS :
-    role === "seller" ? SELLER_SECTIONS :
-    BUYER_SECTIONS;
+    role === "admin" ? withAdminBadges(ADMIN_SECTIONS) :
+    role === "seller" ? withSellerBadges(SELLER_SECTIONS) :
+    withBuyerBadges(BUYER_SECTIONS);
 
   const toggle = () => {
     const next = !isCollapsed;
@@ -303,12 +395,11 @@ export default function Sidebar({ role: roleProp, collapsed: collapsedProp = fal
         <div className="sb-header">
           <div className="sb-logo" onClick={() => navigate("/")}>
             <div className="sb-logo-icon">🚗</div>
-            <span
-              className="sb-logo-text"
-              style={{ opacity: isCollapsed ? 0 : 1, transition: "opacity 0.2s" }}
-            >
-              Auto<span>Xpert</span>
-            </span>
+            {!isCollapsed && (
+              <span className="sb-logo-text">
+                Auto<span>Xpert</span>
+              </span>
+            )}
           </div>
           <button className="sb-toggle" onClick={toggle}>
             {isCollapsed ? "▶" : "◀"}
@@ -321,25 +412,19 @@ export default function Sidebar({ role: roleProp, collapsed: collapsedProp = fal
             {user?.avatar || user?.full_name?.[0] || user?.name?.[0] || "U"}
             <div className="sb-online" />
           </div>
-          <div
-            className="sb-user-info"
-            style={{ opacity: isCollapsed ? 0 : 1, transition: "opacity 0.2s" }}
-          >
-            <div className="sb-user-name">{user?.full_name || user?.name || "Guest"}</div>
-            <div className="sb-user-role">{role}</div>
-          </div>
+          {!isCollapsed && (
+            <div className="sb-user-info">
+              <div className="sb-user-name">{user?.full_name || user?.name || "Guest"}</div>
+              <div className="sb-user-role">{role}</div>
+            </div>
+          )}
         </div>
 
         {/* Navigation */}
         <div className="sb-scroll">
           {sections.map((section) => (
             <div key={section.title}>
-              <div
-                className="sb-section-title"
-                style={{ opacity: isCollapsed ? 0 : 1, transition: "opacity 0.2s" }}
-              >
-                {section.title}
-              </div>
+              {!isCollapsed && <div className="sb-section-title">{section.title}</div>}
               {section.items.map((item) => (
                 <a
                   key={item.label}
@@ -352,9 +437,7 @@ export default function Sidebar({ role: roleProp, collapsed: collapsedProp = fal
                   onClick={(e) => { e.preventDefault(); navigate(item.href); }}
                 >
                   <span className="sb-icon">{item.icon}</span>
-                  <span style={{ flex: 1, opacity: isCollapsed ? 0 : 1, transition: "opacity 0.15s" }}>
-                    {item.label}
-                  </span>
+                  {!isCollapsed && <span style={{ flex: 1 }}>{item.label}</span>}
                   {item.badge && !isCollapsed && (
                     <span className={`sb-badge ${badgeClass(item.badge)}`}>{item.badge}</span>
                   )}
@@ -367,16 +450,16 @@ export default function Sidebar({ role: roleProp, collapsed: collapsedProp = fal
 
         {/* Bottom */}
         <div className="sb-bottom">
-          <button
-            className="sb-post-btn"
-            style={{ padding: isCollapsed ? "11px 0" : "11px 14px" }}
-            onClick={() => navigate("/add-listing")}
-          >
-            <span>+</span>
-            <span style={{ opacity: isCollapsed ? 0 : 1, transition: "opacity 0.15s" }}>
-              Post a Listing
-            </span>
-          </button>
+          {role === "seller" && (
+            <button
+              className="sb-post-btn"
+              style={{ padding: isCollapsed ? "11px 0" : "11px 14px" }}
+              onClick={() => navigate("/add-listing")}
+            >
+              <span>+</span>
+              {!isCollapsed && <span>Post a Listing</span>}
+            </button>
+          )}
           <div
             className="sb-logout"
             style={{
@@ -386,9 +469,7 @@ export default function Sidebar({ role: roleProp, collapsed: collapsedProp = fal
             onClick={() => { logout?.(); navigate("/"); }}
           >
             <span style={{ fontSize: 17 }}>🚪</span>
-            <span style={{ opacity: isCollapsed ? 0 : 1, transition: "opacity 0.15s" }}>
-              Sign Out
-            </span>
+            {!isCollapsed && <span>Sign Out</span>}
             <span className="sb-tooltip">Sign Out</span>
           </div>
         </div>

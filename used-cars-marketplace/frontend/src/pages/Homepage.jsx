@@ -167,6 +167,9 @@ export default function Homepage() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: "1.5rem" }}>
           {featuredCars.map((car, i) => (
             <div key={car.id} className="hero-card" onClick={() => navigate(`/car/${car.id}`)} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "12px", overflow: "hidden", cursor: "pointer", animation: `fadeUp 0.6s ${i * 0.08}s ease both` }}>
+              {(() => {
+                const trustTone = car.trustScore == null ? "#6b7280" : car.trustScore >= 85 ? "#10b981" : car.trustScore >= 70 ? "#f59e0b" : "#ef4444";
+                return (
               <div style={{ position: "relative", height: "200px", overflow: "hidden" }}>
                 <img
                   src={car.image || "https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=600&q=80"}
@@ -174,9 +177,9 @@ export default function Homepage() {
                   className="car-img"
                   style={{ width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.6s ease" }}
                 />
-                <div style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(0,0,0,0.8)", border: "1px solid rgba(245,158,11,0.5)", borderRadius: "6px", padding: "4px 10px", fontSize: "0.75rem", color: "#f59e0b", fontWeight: 600, backdropFilter: "blur(8px)" }}>
-                  ★ {car.trustScore}
-                </div>
+                <div style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(0,0,0,0.8)", border: `1px solid ${trustTone}55`, borderRadius: "6px", padding: "4px 10px", fontSize: "0.75rem", color: trustTone, fontWeight: 600, backdropFilter: "blur(8px)" }}>
+                    {car.trustScore == null ? "Pending" : `★ ${car.trustScore}`}
+                  </div>
                 {car.verified && (
                   <div style={{ position: "absolute", top: "12px", left: "12px", background: "rgba(16,185,129,0.2)", border: "1px solid rgba(16,185,129,0.4)", borderRadius: "100px", padding: "3px 10px", fontSize: "0.7rem", color: "#10b981", letterSpacing: "0.05em" }}>
                     ✓ VERIFIED
@@ -187,6 +190,8 @@ export default function Homepage() {
                   {car.priceTag}
                 </div>
               </div>
+                );
+              })()}
 
               <div style={{ padding: "1.25rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>

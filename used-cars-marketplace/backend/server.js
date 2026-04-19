@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
+const { startTrustScoreWorker } = require("./workers/trustScoreWorker");
 require("dotenv").config();
 
 const app = express();
@@ -28,6 +29,10 @@ app.use("/api/payments", require("./routes/payments"));
 app.use("/api/dashboard", require("./routes/dashboard"));
 app.use("/api/inquiries", require("./routes/inquiries"));
 app.use("/api/chatbot", require("./routes/chatbot"));
+app.use("/api/compare", require("./routes/compare"));
+app.use("/api/admin", require("./routes/admin"));
+app.use("/api/seller", require("./routes/seller"));
+app.use("/api/buyer", require("./routes/buyer"));
 
 // Health check
 app.get("/", (req, res) => res.json({ message: "SellBuy Used Cars API running" }));
@@ -36,4 +41,7 @@ app.get("/", (req, res) => res.json({ message: "SellBuy Used Cars API running" }
 app.use((req, res) => res.status(404).json({ message: "Route not found" }));
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+	console.log(`Server running on http://localhost:${PORT}`);
+	startTrustScoreWorker();
+});

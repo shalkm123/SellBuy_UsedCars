@@ -178,7 +178,17 @@ export default function LoginPage() {
   const [showPass, setShowPass] = useState(false);
   const [loading,  setLoading] = useState(false);
   const [error,    setError]   = useState("");
-  const [form,     setForm]    = useState({ name: "", email: "", password: "", phone: "" });
+  const [form,     setForm]    = useState({
+    full_name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    phone_number: "",
+    aadhaar_encrypted: "",
+    age: "",
+    city: "",
+    state: "",
+  });
 
   const { login, register } = useAuth();
   const navigate = useNavigate();
@@ -197,10 +207,24 @@ export default function LoginPage() {
         else if (user.role === "seller") navigate("/dashboard/seller");
         else navigate("/dashboard/buyer");
       } else {
-        navigate("/register");
+        if (form.password !== form.confirmPassword) {
+          throw new Error("Passwords do not match");
+        }
+        await register({
+          full_name: form.full_name,
+          email: form.email,
+          password: form.password,
+          phone_number: form.phone_number,
+          aadhaar_encrypted: form.aadhaar_encrypted,
+          age: form.age,
+          city: form.city,
+          state: form.state,
+          role,
+        });
+        navigate("/login");
       }
     } catch (err) {
-      setError(err.response?.data?.message || "Invalid email or password");
+      setError(err.response?.data?.message || err.message || (mode === "login" ? "Invalid email or password" : "Registration failed"));
     } finally {
       setLoading(false);
     }
@@ -306,14 +330,54 @@ export default function LoginPage() {
                       <label className="ab-field-label">Full Name</label>
                       <div className="ab-input-wrap">
                         <input className="ab-input" type="text" placeholder="Rahul Sharma"
-                          value={form.name} onChange={patch("name")} required />
+                          value={form.full_name} onChange={patch("full_name")} required />
                       </div>
                     </div>
                     <div>
-                      <label className="ab-field-label">Phone (optional)</label>
+                      <label className="ab-field-label">Phone Number</label>
                       <div className="ab-input-wrap">
-                        <input className="ab-input" type="tel" placeholder="+91 9999999999"
-                          value={form.phone} onChange={patch("phone")} />
+                        <input className="ab-input" type="tel" placeholder="9876543210"
+                          value={form.phone_number} onChange={patch("phone_number")} required />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="ab-field-label">Aadhaar Number</label>
+                      <div className="ab-input-wrap">
+                        <input className="ab-input" type="text" maxLength="12" placeholder="12 digit Aadhaar"
+                          value={form.aadhaar_encrypted} onChange={patch("aadhaar_encrypted")} required />
+                      </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                      <div>
+                        <label className="ab-field-label">Age</label>
+                        <div className="ab-input-wrap">
+                          <input className="ab-input" type="number" min="18" placeholder="18"
+                            value={form.age} onChange={patch("age")} required />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="ab-field-label">Role</label>
+                        <div className="ab-input-wrap">
+                          <select className="ab-input" value={role} onChange={(e) => setRole(e.target.value)}>
+                            {ROLES.map((r) => (
+                              <option key={r.id} value={r.id}>{r.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="ab-field-label">City</label>
+                      <div className="ab-input-wrap">
+                        <input className="ab-input" type="text" placeholder="Mumbai"
+                          value={form.city} onChange={patch("city")} required />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="ab-field-label">State</label>
+                      <div className="ab-input-wrap">
+                        <input className="ab-input" type="text" placeholder="Maharashtra"
+                          value={form.state} onChange={patch("state")} required />
                       </div>
                     </div>
                   </>
@@ -338,6 +402,22 @@ export default function LoginPage() {
                     </button>
                   </div>
                 </div>
+
+                {mode === "signup" && (
+                  <div>
+                    <label className="ab-field-label">Confirm Password</label>
+                    <div className="ab-input-wrap">
+                      <input
+                        className="ab-input"
+                        type={showPass ? "text" : "password"}
+                        placeholder="Re-enter password"
+                        value={form.confirmPassword}
+                        onChange={patch("confirmPassword")}
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <button type="submit" className="ab-submit" disabled={loading}>
@@ -348,7 +428,7 @@ export default function LoginPage() {
             <div className="ab-switch">
               {mode === "login" ? "New to AutoBazaar? " : "Need the full sign-up flow? "}
               <button type="button" className="ab-switch-btn"
-                  onClick={() => { if (mode === "login") navigate("/register"); else { setMode("login"); setError(""); } }}>
+                  onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }}>
                   {mode === "login" ? "Create free account" : "Sign in instead"}
               </button>
             </div>

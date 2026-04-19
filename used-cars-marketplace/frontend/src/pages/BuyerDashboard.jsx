@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Sidebar from "../components/Sidebar";
-import { mockCars, mockBids, mockWishlist, mockOffers, formatPrice } from "../data/mockData";
+import { getAllCars, getBuyerBids, getBuyerDashboard, getBuyerNavStats, getBuyerOffers, getMyWishlist } from "../api";
 
 const CSS = `
 @keyframes bd-up { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
@@ -30,25 +30,84 @@ const CSS = `
 `;
 
 const BID_STATUS = {
-  pending:   { bg: "rgba(245,158,11,.15)", color: "#F59E0B",  label: "Pending" },
-  countered: { bg: "rgba(59,130,246,.15)", color: "#60a5fa",  label: "Countered" },
-  accepted:  { bg: "rgba(34,197,94,.15)",  color: "#4ade80",  label: "Accepted" },
-  rejected:  { bg: "rgba(239,68,68,.15)",  color: "#f87171",  label: "Rejected" },
+  PLACED: { bg: "rgba(245,158,11,.15)", color: "#F59E0B", label: "Pending" },
+  OUTBID: { bg: "rgba(59,130,246,.15)", color: "#60a5fa", label: "Outbid" },
+  ACCEPTED: { bg: "rgba(34,197,94,.15)", color: "#4ade80", label: "Accepted" },
+  REJECTED: { bg: "rgba(239,68,68,.15)", color: "#f87171", label: "Rejected" },
 };
+
+const formatPrice = (value) => `Rs ${Number(value || 0).toLocaleString("en-IN")}`;
 
 export default function BuyerDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [dashboard, setDashboard] = useState({ purchases: [], inquiries: [] });
+  const [wishlist, setWishlist] = useState([]);
+  const [bids, setBids] = useState([]);
+  const [offers, setOffers] = useState([]);
+  const [recommended, setRecommended] = useState([]);
+  const [navStats, setNavStats] = useState({ wishlist_items: 0, active_bids: 0, open_messages: 0 });
+
   const mainMargin = sidebarCollapsed ? 72 : 260;
-  const wishlisted = mockCars.filter((c) => mockWishlist.includes(c.id));
   const firstName = (user?.full_name || user?.name || "Buyer").split(" ")[0];
 
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [dashboardRes, wishlistRes, bidsRes, offersRes, navStatsRes, carsRes] = await Promise.all([
+        getBuyerDashboard(),
+        getMyWishlist(),
+        getBuyerBids(),
+        getBuyerOffers(),
+        getBuyerNavStats(),
+        getAllCars({ status: "ACTIVE" }),
+      ]);
+
+      const wishlistItems = Array.isArray(wishlistRes.data?.items) ? wishlistRes.data.items : [];
+      const bidRows = Array.isArray(bidsRes.data) ? bidsRes.data : [];
+      const offerRows = Array.isArray(offersRes.data?.offers) ? offersRes.data.offers : [];
+      const allCars = Array.isArray(carsRes.data) ? carsRes.data : [];
+
+      setDashboard({
+        purchases: Array.isArray(dashboardRes.data?.purchases) ? dashboardRes.data.purchases : [],
+        inquiries: Array.isArray(dashboardRes.data?.inquiries) ? dashboardRes.data.inquiries : [],
+      });
+      setWishlist(wishlistItems);
+      setBids(bidRows);
+      setOffers(offerRows);
+      setNavStats({
+        wishlist_items: Number(navStatsRes.data?.wishlist_items || 0),
+        active_bids: Number(navStatsRes.data?.active_bids || 0),
+        open_messages: Number(navStatsRes.data?.open_messages || 0),
+      });
+
+      const hidden = new Set(wishlistItems.map((item) => Number(item.id)));
+      setRecommended(allCars.filter((item) => !hidden.has(Number(item.id))).slice(0, 2));
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to load dashboard");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const engagementScore = useMemo(() => {
+    const value = 40 + (wishlist.length * 5) + (navStats.active_bids * 8) + (dashboard.inquiries.length * 4);
+    return Math.max(0, Math.min(100, value));
+  }, [wishlist.length, navStats.active_bids, dashboard.inquiries.length]);
+
   const STATS = [
-    { label: "Saved Cars",   value: wishlisted.length, icon: "❤️", color: "#ef4444", bg: "rgba(239,68,68,.12)" },
-    { label: "Active Bids",  value: mockBids.filter(b => b.status === "pending").length, icon: "⚡", color: "#F59E0B", bg: "rgba(245,158,11,.12)" },
-    { label: "Cars Viewed",  value: 24,  icon: "👁️", color: "#60a5fa", bg: "rgba(96,165,250,.12)" },
-    { label: "Purchases",    value: 1,   icon: "✅", color: "#4ade80", bg: "rgba(74,222,128,.12)" },
+    { label: "Saved Cars", value: navStats.wishlist_items, icon: "❤️", color: "#ef4444", bg: "rgba(239,68,68,.12)" },
+    { label: "Active Bids", value: navStats.active_bids, icon: "⚡", color: "#F59E0B", bg: "rgba(245,158,11,.12)" },
+    { label: "Open Messages", value: navStats.open_messages, icon: "💬", color: "#60a5fa", bg: "rgba(96,165,250,.12)" },
+    { label: "Purchases", value: dashboard.purchases.length, icon: "✅", color: "#4ade80", bg: "rgba(74,222,128,.12)" },
   ];
 
   const QUICK = [
@@ -61,11 +120,12 @@ export default function BuyerDashboard() {
   return (
     <>
       <style>{CSS}</style>
-      {/* ✅ FIX: paddingTop: "70px" on outer wrapper so content clears the fixed navbar */}
       <div style={{ display: "flex", minHeight: "100vh", background: "#080808", fontFamily: "sans-serif", paddingTop: "70px" }}>
         <Sidebar role="buyer" onToggle={setSidebarCollapsed} />
 
         <main style={{ flex: 1, marginLeft: mainMargin, padding: "36px 32px", overflowY: "auto", minWidth: 0, transition: "margin-left 0.3s cubic-bezier(0.4,0,0.2,1)" }}>
+          {error && <div style={{ marginBottom: 14, color: "#f87171" }}>{error}</div>}
+          {loading && <div style={{ marginBottom: 14, color: "rgba(255,255,255,.45)" }}>Loading dashboard...</div>}
 
           {/* Header */}
           <div className="bd-a1" style={{ marginBottom: 32 }}>
@@ -108,23 +168,22 @@ export default function BuyerDashboard() {
                 <button className="bd-see-all">View All →</button>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {mockBids.map((bid) => {
-                  const car = mockCars.find((c) => c.id === bid.carId);
-                  const st  = BID_STATUS[bid.status] || BID_STATUS.pending;
+                {bids.slice(0, 4).map((bid) => {
+                  const st = BID_STATUS[bid.status] || BID_STATUS.PLACED;
                   return (
-                    <div key={bid.id} className="bd-car-row" onClick={() => navigate(`/car/${bid.carId}`)}>
-                      <img className="bd-img" src={car?.image} alt="" />
+                    <div key={bid.id} className="bd-car-row" onClick={() => navigate(`/car/${bid.car_id}`)}>
+                      <img className="bd-img" src={bid.image_url || "https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=600&q=80"} alt="" />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: 13, fontWeight: 600, color: "#fff", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{car?.title}</p>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: "#fff", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bid.car_title}</p>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: "#F59E0B" }}>₹{bid.amount.toLocaleString()}</span>
-                          {bid.counterAmount && <span style={{ fontSize: 11, color: "rgba(255,255,255,.35)" }}>↔ ₹{bid.counterAmount.toLocaleString()}</span>}
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "#F59E0B" }}>₹{Number(bid.bid_amount || 0).toLocaleString()}</span>
                         </div>
                       </div>
                       <span className="bd-badge" style={{ background: st.bg, color: st.color }}>{st.label}</span>
                     </div>
                   );
                 })}
+                {!loading && bids.length === 0 && <div style={{ color: "rgba(255,255,255,.5)", fontSize: 13 }}>No active bids yet.</div>}
               </div>
             </div>
 
@@ -135,7 +194,7 @@ export default function BuyerDashboard() {
                 <button className="bd-see-all">View All →</button>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {wishlisted.map((car) => (
+                {wishlist.slice(0, 4).map((car) => (
                   <div key={car.id} className="bd-car-row" onClick={() => navigate(`/car/${car.id}`)}>
                     <img className="bd-img" src={car.image} alt="" />
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -145,6 +204,7 @@ export default function BuyerDashboard() {
                     <span style={{ fontSize: 14, fontWeight: 700, color: "#F59E0B", flexShrink: 0 }}>{formatPrice(car.price)}</span>
                   </div>
                 ))}
+                {!loading && wishlist.length === 0 && <div style={{ color: "rgba(255,255,255,.5)", fontSize: 13 }}>Your wishlist is empty.</div>}
               </div>
             </div>
 
@@ -152,27 +212,28 @@ export default function BuyerDashboard() {
             <div className="bd-card bd-a5">
               <div className="bd-section-title">📋 My Offers</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {mockOffers.map((offer) => (
+                {offers.slice(0, 4).map((offer) => (
                   <div key={offer.id} className="bd-car-row">
-                    <img className="bd-img" src={offer.car.image} alt="" />
+                    <img className="bd-img" src={offer.image_url || "https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=600&q=80"} alt="" />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{offer.car.title}</p>
-                      <p style={{ fontSize: 12, color: "#F59E0B", marginTop: 2 }}>Offered: ₹{offer.amount.toLocaleString()}</p>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{offer.car_title}</p>
+                      <p style={{ fontSize: 12, color: "#F59E0B", marginTop: 2 }}>Offered: ₹{Number(offer.bid_amount || 0).toLocaleString()}</p>
                     </div>
-                    <span className="bd-badge" style={offer.status === "accepted"
+                    <span className="bd-badge" style={offer.status === "ACCEPTED"
                       ? { background: "rgba(34,197,94,.15)", color: "#4ade80" }
                       : { background: "rgba(245,158,11,.15)", color: "#F59E0B" }}>
-                      {offer.status === "accepted" ? "✓ Accepted" : "⏳ Pending"}
+                      {offer.status === "ACCEPTED" ? "✓ Accepted" : "⏳ Pending"}
                     </span>
                   </div>
                 ))}
+                {!loading && offers.length === 0 && <div style={{ color: "rgba(255,255,255,.5)", fontSize: 13 }}>No offers yet.</div>}
               </div>
 
               {/* Recommended */}
               <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px solid rgba(255,255,255,.06)" }}>
                 <p style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,.35)", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>🔥 Recommended For You</p>
                 <div style={{ display: "flex", gap: 10 }}>
-                  {mockCars.slice(3, 5).map((car) => (
+                  {recommended.map((car) => (
                     <div key={car.id} onClick={() => navigate(`/car/${car.id}`)} style={{ flex: 1, background: "rgba(255,255,255,.03)", borderRadius: 10, overflow: "hidden", cursor: "pointer", border: "1px solid rgba(255,255,255,.05)", transition: "all .18s" }}
                       onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(245,158,11,.25)"}
                       onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,.05)"}
@@ -184,6 +245,7 @@ export default function BuyerDashboard() {
                       </div>
                     </div>
                   ))}
+                  {!loading && recommended.length === 0 && <div style={{ color: "rgba(255,255,255,.5)", fontSize: 13 }}>Browse more cars to get recommendations.</div>}
                 </div>
               </div>
             </div>
@@ -208,7 +270,9 @@ export default function BuyerDashboard() {
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", animation: "bd-pulse 2s infinite", marginLeft: 4 }} />
                 </div>
                 <p style={{ fontSize: 12, color: "rgba(255,255,255,.5)", lineHeight: 1.6 }}>
-                  Based on your wishlist, the <strong style={{ color: "rgba(255,255,255,.8)" }}>Tata Nexon EV</strong> has dropped ₹20K this week. Good time to make an offer!
+                  {wishlist[0]
+                    ? <>Your top saved car is <strong style={{ color: "rgba(255,255,255,.8)" }}>{wishlist[0].title}</strong>. You can compare it with similar listings before placing your next offer.</>
+                    : <>Save cars to your wishlist so the AI advisor can suggest better alternatives and bidding strategies.</>}
                 </p>
                 <button onClick={() => navigate("/chatbot")} style={{ marginTop: 10, background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.25)", borderRadius: 8, padding: "7px 14px", fontSize: 11, fontWeight: 600, color: "#F59E0B", cursor: "pointer" }}>
                   Ask AI Advisor →
@@ -218,10 +282,10 @@ export default function BuyerDashboard() {
               {/* Trust score */}
               <div style={{ marginTop: 16, padding: "14px 16px", background: "rgba(255,255,255,.02)", border: "1px solid rgba(255,255,255,.06)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div>
-                  <p style={{ fontSize: 11, color: "rgba(255,255,255,.35)", textTransform: "uppercase", letterSpacing: 0.5 }}>Buyer Trust Score</p>
-                  <p style={{ fontSize: 22, fontWeight: 900, color: "#4ade80", marginTop: 2 }}>92%</p>
+                  <p style={{ fontSize: 11, color: "rgba(255,255,255,.35)", textTransform: "uppercase", letterSpacing: 0.5 }}>Buyer Engagement Score</p>
+                  <p style={{ fontSize: 22, fontWeight: 900, color: "#4ade80", marginTop: 2 }}>{engagementScore}%</p>
                 </div>
-                <div style={{ width: 56, height: 56, borderRadius: "50%", background: "conic-gradient(#4ade80 331deg, rgba(255,255,255,.08) 0deg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 56, height: 56, borderRadius: "50%", background: `conic-gradient(#4ade80 ${Math.round((engagementScore / 100) * 360)}deg, rgba(255,255,255,.08) 0deg)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#111", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>✓</div>
                 </div>
               </div>
