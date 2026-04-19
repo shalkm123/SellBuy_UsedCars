@@ -515,8 +515,6 @@ CREATE TRIGGER trg_cars_after_insert_trust_job
 AFTER INSERT ON cars
 FOR EACH ROW
 BEGIN
-  CALL sp_calculate_car_trust_score(NEW.id);
-
   INSERT INTO trust_score_jobs (car_id, reason, status)
   VALUES (NEW.id, 'CAR_CREATED', 'PENDING');
 END$$

@@ -15,14 +15,7 @@ const QUICK_FILTERS = ["Sedan", "SUV", "Hatchback", "EV", "Luxury", "Under ₹5L
 
 let msgId = 0;
 const CHAT_SESSION_KEY = "chatbot_session_id";
-const initialMessages = [
-  {
-    id: msgId++,
-    role: "bot",
-    text: "Hello! I'm CarBot AI 🚗 I can help you find your perfect car, compare models, calculate EMI, or answer any car-related questions. What are you looking for today?",
-    time: new Date(),
-  },
-];
+const initialMessages = [];
 
 export default function ChatbotPage() {
   const navigate = useNavigate();
@@ -32,6 +25,7 @@ export default function ChatbotPage() {
   const [activeFilter, setActiveFilter] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
   const [summary, setSummary] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
   const bottomRef = useRef(null);
   const inputRef  = useRef(null);
   const [sessionId, setSessionId] = useState(() => localStorage.getItem(CHAT_SESSION_KEY) || "");
@@ -68,6 +62,7 @@ export default function ChatbotPage() {
     if (!userText || typing) return;
     setInput("");
     setSummary("");
+    setErrorMessage("");
 
     setMessages((prev) => [...prev, { id: msgId++, role: "user", text: userText, time: new Date() }]);
     setTyping(true);
@@ -83,8 +78,9 @@ export default function ChatbotPage() {
       setRecommendations(Array.isArray(res.data?.recommendations) ? res.data.recommendations : []);
       setSummary(res.data?.summary || "");
       setMessages((prev) => [...prev, { id: msgId++, role: "bot", text: res.data.reply, time: new Date() }]);
-    } catch {
-      setMessages((prev) => [...prev, { id: msgId++, role: "bot", text: "Sorry, something went wrong. Please try again.", time: new Date() }]);
+    } catch (error) {
+      console.error("[Chatbot UI] Message send failed", error);
+      setErrorMessage(error.response?.data?.message || "");
     } finally {
       setTyping(false);
     }
@@ -266,6 +262,11 @@ export default function ChatbotPage() {
               {summary && (
                 <div style={{ marginTop: 14, color: "rgba(255,255,255,.45)", fontSize: 12 }}>
                   {summary}
+                </div>
+              )}
+              {errorMessage && (
+                <div style={{ marginTop: 14, color: "#fca5a5", fontSize: 12 }}>
+                  {errorMessage}
                 </div>
               )}
               <div ref={bottomRef} />

@@ -102,6 +102,10 @@ const saveChatMessage = async (sessionId, role, content, metadata = {}) => {
   );
 };
 
+const logChatbot = (message, details = {}) => {
+  console.info(`[Chatbot] ${message}`, details);
+};
+
 const buildIntentPrompt = (message, history = []) => `
 You are an intent parser for a used car marketplace chatbot.
 Return STRICT JSON only with this schema:
@@ -183,6 +187,10 @@ const fallbackIntent = (message) => {
 
 const extractIntent = async (message, history = []) => {
   try {
+    logChatbot("Extracting intent with Gemini", {
+      messagePreview: String(message || "").slice(0, 180),
+      historyLength: Array.isArray(history) ? history.length : 0,
+    });
     const response = await callGemini({
       systemInstruction: "You are a JSON-only intent parser for a used car marketplace assistant.",
       prompt: buildIntentPrompt(message, history),
@@ -190,6 +198,12 @@ const extractIntent = async (message, history = []) => {
       maxOutputTokens: 500,
     });
     const parsed = parseJsonFromText(response);
+    logChatbot("Intent extracted", {
+      summary: String(parsed.summary || message).slice(0, 180),
+      followUpQuestion: parsed.follow_up_question ? String(parsed.follow_up_question).slice(0, 180) : null,
+      missingFields: Array.isArray(parsed.missing_fields) ? parsed.missing_fields : [],
+      filters: parsed.filters || {},
+    });
     return {
       summary: String(parsed.summary || message).slice(0, 280),
       follow_up_question: parsed.follow_up_question ? String(parsed.follow_up_question).slice(0, 240) : null,
@@ -208,8 +222,12 @@ const extractIntent = async (message, history = []) => {
         year_max: Number.isFinite(Number(parsed.filters?.year_max)) ? Number(parsed.filters.year_max) : null,
       },
     };
-  } catch {
-    return fallbackIntent(message);
+  } catch (error) {
+    logChatbot("Gemini intent extraction failed; using fallback parser", {
+      messagePreview: String(message || "").slice(0, 180),
+      error: error.message,
+    });
+    return { ...fallbackIntent(message), source: "fallback" };
   }
 };
 
@@ -373,6 +391,10 @@ Rules:
 `;
 
   try {
+    logChatbot("Composing reply with Gemini", {
+      recommendationCount: recommendations.length,
+      topTitles: recommendations.slice(0, 3).map((car) => car.title),
+    });
     const response = await callGemini({
       systemInstruction: "You are a JSON-only response generator for a used car marketplace chatbot.",
       prompt,
@@ -380,25 +402,22 @@ Rules:
       maxOutputTokens: 350,
     });
     const parsed = parseJsonFromText(response);
+    logChatbot("Gemini reply parsed", {
+      replyPreview: String(parsed.reply || "").slice(0, 180),
+      summaryPreview: String(parsed.summary || intent.summary || "").slice(0, 180),
+    });
     return {
+      source: "gemini",
       reply: String(parsed.reply || "").trim(),
       follow_up_question: parsed.follow_up_question ? String(parsed.follow_up_question).trim() : intent.follow_up_question,
       summary: String(parsed.summary || intent.summary || "").trim(),
     };
-  } catch {
-    const replyParts = [];
-    if (intent.follow_up_question) replyParts.push(intent.follow_up_question);
-    if (recommendations.length > 0) {
-      const topCars = recommendations.slice(0, 3).map((car) => `${car.title} (${car.city || "India"}, ₹${Number(car.price || 0).toLocaleString("en-IN")})`).join("; ");
-      replyParts.push(`I found these matches: ${topCars}.`);
-    } else {
-      replyParts.push("I could not find strong matches yet. Try adding budget and city for better results.");
-    }
-    return {
-      reply: replyParts.join(" "),
-      follow_up_question: intent.follow_up_question,
-      summary: intent.summary,
-    };
+  } catch (error) {
+    logChatbot("Gemini reply generation failed", {
+      recommendationCount: recommendations.length,
+      error: error.message,
+    });
+    throw new Error(`Gemini reply generation failed: ${error.message}`);
   }
 };
 
@@ -437,12 +456,22 @@ const handleChatQuery = async (req, res) => {
   }
 
   try {
+    logChatbot("Received chat request", {
+      userId: req.user.id,
+      requestedSessionId,
+      messagePreview: message.slice(0, 200),
+    });
+
     let session = requestedSessionId ? await getChatSession(requestedSessionId, req.user.id) : null;
     if (requestedSessionId && !session) {
+      logChatbot("Requested session not found", { userId: req.user.id, requestedSessionId });
       return res.status(404).json({ message: "Chat session not found" });
     }
     if (!session) {
       session = await createChatSession(req.user.id, message.slice(0, 60) || "CarBot Session");
+      logChatbot("Created new chat session", { sessionId: session?.id, userId: req.user.id });
+    } else {
+      logChatbot("Loaded existing chat session", { sessionId: session.id, userId: req.user.id, title: session.title });
     }
 
     const historyRows = session?.id
@@ -452,6 +481,11 @@ const handleChatQuery = async (req, res) => {
         ))[0]
       : [];
 
+    logChatbot("Loaded chat history", {
+      sessionId: session?.id || null,
+      historyRows: historyRows.length,
+    });
+
     if (session?.id) {
       await saveChatMessage(session.id, "USER", message);
       await updateChatSession(session.id, { last_message_at: new Date() });
@@ -460,6 +494,11 @@ const handleChatQuery = async (req, res) => {
     const intent = await extractIntent(message, historyRows);
     const recommendationsRaw = await searchCars(intent.filters);
     const recommendations = recommendationsRaw.map((car) => scoreRecommendation(car, intent)).sort((a, b) => b.match_score - a.match_score);
+    logChatbot("Search completed", {
+      sessionId: session?.id || null,
+      recommendationCount: recommendations.length,
+      recommendationTitles: recommendations.slice(0, 5).map((car) => car.title),
+    });
     const replyPayload = await composeReply({ intent, recommendations });
 
     const responsePayload = {
@@ -471,12 +510,17 @@ const handleChatQuery = async (req, res) => {
       summary: replyPayload.summary,
       recommendations,
       reply: replyPayload.reply,
+      generation_source: replyPayload.source,
     };
 
     if (session?.id) {
       await saveChatMessage(session.id, "BOT", replyPayload.reply, {
         parsed_filters: intent.filters,
         recommendations,
+      });
+      logChatbot("Saved bot response", {
+        sessionId: session.id,
+        replyPreview: replyPayload.reply.slice(0, 200),
       });
     }
 
@@ -488,7 +532,13 @@ const handleChatQuery = async (req, res) => {
 
     res.json(responsePayload);
   } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+    console.error("[Chatbot] Request failed", {
+      userId: req.user?.id,
+      messagePreview: message.slice(0, 200),
+      error: err.message,
+      stack: err.stack,
+    });
+    res.status(502).json({ message: err.message || "Chatbot request failed", error: err.message });
   }
 };
 
