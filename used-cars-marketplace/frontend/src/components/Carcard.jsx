@@ -6,6 +6,8 @@ import { formatPrice, getPriceTagColor, getFuelIcon } from "../data/mockData";
 export default function CarCard({ car, wishlisted = false, onWishlist, showBid = false }) {
   const [liked, setLiked] = useState(wishlisted);
   const navigate = useNavigate();
+  const trustScoreLabel = car.trustScore == null ? "Pending" : `${car.trustScore}% trust`;
+  const trustScoreTone = car.trustScore == null ? "#6b7280" : car.trustScore >= 90 ? "#22c55e" : car.trustScore >= 75 ? "#f59e0b" : "#ef4444";
 
   const handleWishlist = (e) => {
     e.stopPropagation();
@@ -114,12 +116,12 @@ export default function CarCard({ car, wishlisted = false, onWishlist, showBid =
                 <div
                   className="h-full rounded-full transition-all"
                   style={{
-                    width: `${car.trustScore}%`,
-                    background: car.trustScore >= 90 ? "#22c55e" : car.trustScore >= 75 ? "#f59e0b" : "#ef4444"
+                    width: car.trustScore == null ? "24%" : `${car.trustScore}%`,
+                    background: trustScoreTone
                   }}
                 />
               </div>
-              <span className="text-xs text-gray-500">{car.trustScore}% trust</span>
+              <span className="text-xs" style={{ color: trustScoreTone }}>{trustScoreLabel}</span>
             </div>
           </div>
           {showBid ? (

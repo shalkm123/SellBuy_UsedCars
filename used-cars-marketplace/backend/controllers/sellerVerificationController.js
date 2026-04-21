@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { createAdminAuditLog } = require("../utils/adminAudit");
 
 const getMyVerification = async (req, res) => {
   try {
@@ -46,6 +47,9 @@ const updateVerificationStatus = async (req, res) => {
   const allowed = ["PENDING", "APPROVED", "REJECTED"];
   if (!allowed.includes(status)) return res.status(400).json({ message: "Invalid verification_status" });
   try {
+    const [beforeRows] = await db.query("SELECT user_id, verification_status FROM seller_verification WHERE id = ?", [req.params.id]);
+    if (beforeRows.length === 0) return res.status(404).json({ message: "Verification record not found" });
+
     await db.query(
       "UPDATE seller_verification SET verification_status = ?, verified_at = ?, remarks = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       [status, status === "APPROVED" ? new Date() : null, remarks || null, req.params.id]
@@ -54,6 +58,22 @@ const updateVerificationStatus = async (req, res) => {
     if (rows.length > 0) {
       await db.query("UPDATE users SET is_verified = ? WHERE id = ?", [status === "APPROVED", rows[0].user_id]);
     }
+
+    if (String(req.user?.role || "").toUpperCase() === "ADMIN") {
+      await createAdminAuditLog({
+        actorUserId: req.user.id,
+        actionType: "SELLER_VERIFICATION_UPDATED",
+        targetType: "SELLER_VERIFICATION",
+        targetId: Number(req.params.id),
+        metadata: {
+          userId: beforeRows[0].user_id,
+          previousStatus: beforeRows[0].verification_status,
+          nextStatus: status,
+          remarks: remarks || null,
+        },
+      });
+    }
+
     res.json({ message: "Verification updated" });
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message });

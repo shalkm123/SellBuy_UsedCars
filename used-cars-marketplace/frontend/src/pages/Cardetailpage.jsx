@@ -2,7 +2,21 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { mockCars as cars } from "../data/mockData"; // fixed: was { cars }
 import { useAuth } from "../context/AuthContext";
-import { getCarById } from "../api";
+import {
+  acceptBid,
+  addCompareItem,
+  addWishlistItem,
+  getBidsByCar,
+  getCarById,
+  getMyCompareList,
+  getMyWishlist,
+  placeBid,
+  recomputeTrustScore,
+  removeCompareItem,
+  removeWishlistItem,
+  rejectBid,
+  updateBiddingConfig,
+} from "../api";
 
 const GALLERY_FALLBACKS = [
   "https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=800&q=80",
@@ -33,9 +47,17 @@ export default function CarDetailPage() {
   const [activeImg, setActiveImg] = useState(0);
   const [bidAmount, setBidAmount] = useState("");
   const [bidSubmitted, setBidSubmitted] = useState(false);
+  const [bidError, setBidError] = useState("");
+  const [bidInfo, setBidInfo] = useState(null);
   const [offerAmount, setOfferAmount] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
   const [wishlisted, setWishlisted] = useState(false);
+  const [inCompare, setInCompare] = useState(false);
+  const [bidsData, setBidsData] = useState({ config: null, bids: [] });
+
+  const role = String(user?.role || "").toLowerCase();
+  const isSellerView = role === "seller" || role === "admin";
+  const isBuyerView = role === "buyer" || role === "admin";
 
   useEffect(() => {
     const load = async () => {
@@ -51,20 +73,153 @@ export default function CarDetailPage() {
     load();
   }, [id]);
 
+  const loadBids = async () => {
+    if (!user) return;
+    try {
+      const res = await getBidsByCar(id);
+      setBidsData(res.data || { config: null, bids: [] });
+    } catch {
+      setBidsData({ config: null, bids: [] });
+    }
+  };
+
+  useEffect(() => {
+    loadBids();
+  }, [id, user]);
+
+  useEffect(() => {
+    const hydrateActions = async () => {
+      if (!user) {
+        const localCompare = JSON.parse(localStorage.getItem("compare_ids") || "[]").map(String);
+        setWishlisted(false);
+        setInCompare(localCompare.includes(String(id)));
+        return;
+      }
+
+      if (String(user.role || "").toLowerCase() === "buyer") {
+        try {
+          const res = await getMyWishlist();
+          const ids = (res.data?.items || []).map((item) => String(item.id));
+          setWishlisted(ids.includes(String(id)));
+        } catch {
+          setWishlisted(false);
+        }
+      } else {
+        setWishlisted(false);
+      }
+
+      try {
+        const res = await getMyCompareList();
+        const ids = (res.data?.items || []).map((item) => String(item.id));
+        setInCompare(ids.includes(String(id)));
+      } catch {
+        const localCompare = JSON.parse(localStorage.getItem("compare_ids") || "[]").map(String);
+        setInCompare(localCompare.includes(String(id)));
+      }
+    };
+
+    hydrateActions();
+  }, [id, user]);
+
+  const handleWishlistToggle = async () => {
+    if (String(user?.role || "").toLowerCase() !== "buyer") {
+      navigate("/login");
+      return;
+    }
+    const next = !wishlisted;
+    setWishlisted(next);
+    try {
+      if (next) await addWishlistItem({ car_id: id });
+      else await removeWishlistItem(id);
+    } catch {
+      setWishlisted(!next);
+    }
+  };
+
+  const handleCompareToggle = async () => {
+    const localCompare = JSON.parse(localStorage.getItem("compare_ids") || "[]").map(String);
+    const exists = localCompare.includes(String(id));
+    const next = exists
+      ? localCompare.filter((item) => item !== String(id))
+      : localCompare.length < 3
+        ? [...localCompare, String(id)]
+        : localCompare;
+
+    localStorage.setItem("compare_ids", JSON.stringify(next));
+    setInCompare(next.includes(String(id)));
+
+    if (!user) {
+      navigate(`/compare?ids=${next.join(",")}`);
+      return;
+    }
+
+    try {
+      if (exists) await removeCompareItem(id);
+      else if (next.length !== localCompare.length) await addCompareItem(id);
+    } catch {
+      localStorage.setItem("compare_ids", JSON.stringify(localCompare));
+      setInCompare(localCompare.includes(String(id)));
+    }
+  };
+
   const images = car.images?.length
     ? car.images.map((image) => image.image_url || image)
     : [car.image, ...GALLERY_FALLBACKS.slice(1)].filter(Boolean);
   const similarCars = cars.filter((c) => c.id !== car.id).slice(0, 3);
 
-  const emiMonthly = Math.round((car.price * 0.85 * 0.009 * Math.pow(1.009, 60)) / (Math.pow(1.009, 60) - 1));
+  const emiMonthly = Math.round(Number(car.emiQuote?.monthly_emi || (car.price * 0.85 * 0.009 * Math.pow(1.009, 60)) / (Math.pow(1.009, 60) - 1)));
 
-  const handleBid = () => {
+  const handleBid = async () => {
+    if (!user) {
+      navigate("/login");
+      return;
+    }
     if (!bidAmount || isNaN(Number(bidAmount)) || Number(bidAmount) <= 0) return;
-    setBidSubmitted(true);
-    setTimeout(() => setBidSubmitted(false), 3000);
+
+    setBidError("");
+    try {
+      const bidAmountInRupees = Math.round(Number(bidAmount) * 100000);
+      const res = await placeBid(id, { bid_amount: bidAmountInRupees });
+      setBidInfo(res.data?.message || "Bid placed successfully");
+      setBidSubmitted(true);
+      setBidAmount("");
+      await loadBids();
+      setTimeout(() => setBidSubmitted(false), 3000);
+    } catch (error) {
+      setBidError(error?.response?.data?.message || "Could not place bid");
+    }
+  };
+
+  const handleAcceptBid = async (bidId) => {
+    try {
+      await acceptBid(id, bidId);
+      await loadBids();
+    } catch (error) {
+      setBidError(error?.response?.data?.message || "Could not accept bid");
+    }
+  };
+
+  const handleRejectBid = async (bidId) => {
+    try {
+      await rejectBid(id, bidId);
+      await loadBids();
+    } catch (error) {
+      setBidError(error?.response?.data?.message || "Could not reject bid");
+    }
+  };
+
+  const handleEnableBidding = async () => {
+    try {
+      const end = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      await updateBiddingConfig(id, { is_enabled: true, min_increment: 5000, end_time: end });
+      await loadBids();
+    } catch (error) {
+      setBidError(error?.response?.data?.message || "Could not enable bidding");
+    }
   };
 
   const trustColor = (score) => {
+    if (score == null || Number.isNaN(Number(score))) return "#6b7280";
     if (score >= 85) return "#10b981";
     if (score >= 70) return "#f59e0b";
     return "#ef4444";
@@ -137,19 +292,22 @@ export default function CarDetailPage() {
               <div style={{
                 position: "absolute", top: "1.25rem", right: "1.25rem",
                 background: "rgba(0,0,0,0.85)", backdropFilter: "blur(12px)",
-                border: `2px solid ${trustColor(car.trustScore || 4.8)}`,
+                border: `2px solid ${trustColor(car.trustScore == null ? 0 : car.trustScore)}`,
                 borderRadius: "12px", padding: "0.75rem 1rem", textAlign: "center"
               }}>
-                <div style={{ fontSize: "1.8rem", fontFamily: "'Bebas Neue', cursive", color: trustColor(car.trustScore || 4.8), lineHeight: 1 }}>
-                  {car.trustScore || "4.8"}
+                <div style={{ fontSize: "1.8rem", fontFamily: "'Bebas Neue', cursive", color: trustColor(car.trustScore == null ? 0 : car.trustScore), lineHeight: 1 }}>
+                  {car.trustScore == null ? "Pending" : car.trustScore}
                 </div>
                 <div style={{ fontSize: "0.65rem", color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "2px" }}>
                   Trust Score
                 </div>
+                {car.trustBand && car.trustScore != null && (
+                  <div style={{ fontSize: "0.65rem", color: "#f59e0b", marginTop: 4 }}>{car.trustBand}</div>
+                )}
               </div>
               {/* Wishlist */}
               <button
-                onClick={() => setWishlisted(!wishlisted)}
+                onClick={handleWishlistToggle}
                 style={{
                   position: "absolute", top: "1.25rem", left: "1.25rem",
                   background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)",
@@ -284,6 +442,24 @@ export default function CarDetailPage() {
                   {car.description || `This well-maintained ${car.title} is in excellent condition with all service records available. Single owner, no accidents, and full insurance validity. Perfect for family use with great mileage and a comfortable ride.`}
                   {/* fixed: was car.name in template literal */}
                 </div>
+                {Array.isArray(car.trustFactors) && car.trustFactors.length > 0 && (
+                  <div style={{ marginTop: "1rem", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 12 }}>
+                    <div style={{ color: "#f59e0b", fontFamily: "'Bebas Neue', cursive", fontSize: "1rem", letterSpacing: "0.08em", marginBottom: 8 }}>TRUST FACTORS</div>
+                    {car.trustFactors.slice(0, 5).map((factor, idx) => (
+                      <div key={`${factor.factor_key}-${idx}`} style={{ marginBottom: 6, fontSize: "0.82rem", color: "#d1d5db" }}>
+                        <strong>{factor.factor_label}</strong>: {factor.factor_value || factor.explanation || "-"}
+                      </div>
+                    ))}
+                    {role === "admin" && (
+                      <button
+                        onClick={async () => { await recomputeTrustScore(id); }}
+                        style={{ marginTop: 8, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 6, color: "#f59e0b", padding: "6px 10px", cursor: "pointer" }}
+                      >
+                        Recompute Trust Score
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -368,7 +544,7 @@ export default function CarDetailPage() {
                       <span style={{ color: "#6b7280" }}>Rate</span>
                       <span style={{ color: "#fff" }}>{plan.rate}</span>
                     </div>
-                    <button onClick={() => navigate("/emi")} style={{
+                    <button onClick={() => navigate(`/emi?carId=${car.id}`)} style={{
                       marginTop: "0.75rem", width: "100%", background: "rgba(245,158,11,0.1)",
                       border: "1px solid rgba(245,158,11,0.3)", borderRadius: "6px",
                       padding: "0.5rem", color: "#f59e0b", fontSize: "0.8rem",
@@ -415,7 +591,7 @@ export default function CarDetailPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
               <button
                 className="action-btn"
-                onClick={() => setWishlisted(!wishlisted)}
+                onClick={handleWishlistToggle}
                 style={{
                   background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
                   borderRadius: "8px", padding: "0.8rem",
@@ -426,13 +602,13 @@ export default function CarDetailPage() {
               </button>
               <button
                 className="action-btn"
-                onClick={() => navigate("/compare")}
+                onClick={handleCompareToggle}
                 style={{
-                  background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)",
+                  background: inCompare ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)",
                   borderRadius: "8px", padding: "0.8rem",
-                  color: "#9ca3af", cursor: "pointer", fontSize: "0.85rem"
+                  color: inCompare ? "#f59e0b" : "#9ca3af", cursor: "pointer", fontSize: "0.85rem"
                 }}>
-                ⊕ Compare
+                {inCompare ? "⊖ In Compare" : "⊕ Compare"}
               </button>
             </div>
           </div>
@@ -452,6 +628,11 @@ export default function CarDetailPage() {
             <p style={{ color: "#6b7280", fontSize: "0.8rem", marginBottom: "1rem" }}>
               Current asking: <span style={{ color: "#f59e0b" }}>₹{(car.price / 100000).toFixed(2)}L</span>
             </p>
+            {bidsData.config && (
+              <p style={{ color: "#9ca3af", fontSize: "0.76rem", marginBottom: "0.75rem" }}>
+                Min increment: ₹{Number(bidsData.config.min_increment || 0).toLocaleString()} {bidsData.config.is_enabled ? "| Live" : "| Disabled"}
+              </p>
+            )}
             <div style={{ display: "flex", gap: "0", marginBottom: "0.75rem" }}>
               <span style={{
                 background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)",
@@ -489,6 +670,38 @@ export default function CarDetailPage() {
               }}>
               {bidSubmitted ? "✓ BID PLACED!" : "SUBMIT BID →"}
             </button>
+            {bidInfo && <p style={{ color: "#10b981", fontSize: "0.75rem", marginTop: 8 }}>{bidInfo}</p>}
+            {bidError && <p style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: 8 }}>{bidError}</p>}
+            {isSellerView && !bidsData.config?.is_enabled && (
+              <button
+                onClick={handleEnableBidding}
+                style={{ width: "100%", marginTop: 8, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 8, color: "#f59e0b", padding: "0.65rem", cursor: "pointer" }}
+              >
+                Enable Bidding (24h)
+              </button>
+            )}
+            {isSellerView && bidsData.bids.length > 0 && (
+              <div style={{ marginTop: 10, maxHeight: 180, overflowY: "auto" }}>
+                {bidsData.bids.slice(0, 5).map((bid) => (
+                  <div key={bid.id} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: 8, marginBottom: 6 }}>
+                    <div style={{ color: "#d1d5db", fontSize: "0.78rem" }}>
+                      {bid.bidder_name} · ₹{Number(bid.bid_amount || 0).toLocaleString()} · {bid.status}
+                    </div>
+                    {bid.status === "PLACED" && (
+                      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                        <button onClick={() => handleAcceptBid(bid.id)} style={{ background: "#10b981", border: "none", borderRadius: 6, color: "#fff", padding: "4px 8px", cursor: "pointer", fontSize: "0.72rem" }}>Accept</button>
+                        <button onClick={() => handleRejectBid(bid.id)} style={{ background: "#ef4444", border: "none", borderRadius: 6, color: "#fff", padding: "4px 8px", cursor: "pointer", fontSize: "0.72rem" }}>Reject</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {isBuyerView && bidsData.bids.length > 0 && (
+              <p style={{ color: "#9ca3af", fontSize: "0.75rem", marginTop: 8 }}>
+                Highest bid: ₹{Number(bidsData.bids[0].bid_amount || 0).toLocaleString()}
+              </p>
+            )}
           </div>
 
           {/* Make Offer */}
