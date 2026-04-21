@@ -136,18 +136,21 @@ const HIDDEN_ON = ["/login", "/register", "/"];
 
 // Links that require login
 const NAV_LINKS = [
-  { label: "Home",    path: "/home",              public: true  },
-  { label: "Browse",  path: "/browse",            public: true  },
-  { label: "Compare", path: "/compare",           public: true  },
-  { label: "EMI Calc",path: "/emi",               public: true  },
-  { label: "Chatbot", path: "/chatbot",           public: false },
+  { label: "Home", path: "/home", public: true },
+  { label: "Browse", path: "/browse", public: true },
+  { label: "Compare", path: "/compare", public: true },
+  { label: "EMI Calc", path: "/emi", public: true },
+  { label: "Chatbot", path: "/chatbot", public: false },
 ];
 
 export default function Navbar() {
   const { user, logout } = useAuth();
-  const navigate  = useNavigate();
-  const location  = useLocation();
-  const [buyerStats, setBuyerStats] = useState({ notifications: 0, wishlist_items: 0 });
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [buyerStats, setBuyerStats] = useState({
+    notifications: 0,
+    wishlist_items: 0,
+  });
 
   useEffect(() => {
     const loadStats = async () => {
@@ -189,15 +192,18 @@ export default function Navbar() {
 
   const displayName = user?.full_name || user?.name || "";
   const initials = displayName
-    ? displayName.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
+    ? displayName
+        .split(" ")
+        .map((w) => w[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
     : "?";
 
   return (
     <>
       <style>{STYLES}</style>
       <nav className="nav-root">
-
-        
         {/* Nav Links */}
         <div className="nav-links">
           {NAV_LINKS.map((link) => {
@@ -222,29 +228,46 @@ export default function Navbar() {
             <>
               {/* Post listing — seller/admin only */}
               {String(user.role).toLowerCase() === "seller" && (
-                <button className="nav-post-btn" onClick={() => navigate("/post-listing")}>
+                <button
+                  className="nav-post-btn"
+                  onClick={() => navigate("/post-listing")}
+                >
                   + Post Listing
                 </button>
               )}
 
               {/* Notifications */}
-              <div className="nav-icon-btn">
-                🔔
+              {/* <div className="nav-icon-btn">
+                
                 {String(user.role).toLowerCase() === "buyer" && buyerStats.notifications > 0 && (
                   <span className="nav-badge">{buyerStats.notifications > 9 ? "9+" : buyerStats.notifications}</span>
                 )}
-              </div>
+              </div> */}
 
               {/* Wishlist */}
-              <div className="nav-icon-btn" onClick={() => navigate("/wishlist")}>
+              <div
+                className="nav-icon-btn"
+                onClick={() => navigate("/wishlist")}
+              >
                 ❤️
-                {String(user.role).toLowerCase() === "buyer" && buyerStats.wishlist_items > 0 && (
-                  <span className="nav-badge">{buyerStats.wishlist_items > 9 ? "9+" : buyerStats.wishlist_items}</span>
-                )}
+                {String(user.role).toLowerCase() === "buyer" &&
+                  buyerStats.wishlist_items > 0 && (
+                    <span className="nav-badge">
+                      {buyerStats.wishlist_items > 9
+                        ? "9+"
+                        : buyerStats.wishlist_items}
+                    </span>
+                  )}
               </div>
 
               {/* Avatar */}
-              <div className="nav-avatar" title={displayName} onClick={() => navigate(`/dashboard/${String(user.role).toLowerCase()}`)}>
+              <div
+                className="nav-avatar"
+                title={displayName}
+                onClick={() =>
+                  navigate(`/dashboard/${String(user.role).toLowerCase()}`)
+                }
+              >
                 {initials}
               </div>
 
@@ -255,12 +278,14 @@ export default function Navbar() {
             </>
           ) : (
             /* Not logged in — only show Sign In, NO Register button */
-            <button className="nav-signin-btn" onClick={() => navigate("/login")}>
+            <button
+              className="nav-signin-btn"
+              onClick={() => navigate("/login")}
+            >
               Sign In
             </button>
           )}
         </div>
-
       </nav>
     </>
   );
